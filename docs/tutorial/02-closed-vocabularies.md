@@ -2,6 +2,16 @@
 
 *The files it dissects: `scheme/domain/game.scm`, `scheme/rules/commands.scm`.*
 
+> **Where you are.** Chapter 1 gave you the seam: sixteen primitives, and a
+> program that is pure Scheme. Now you design your first data.
+>
+> **By the end of this chapter you can** declare a closed vocabulary with
+> `define-variant`, dispatch with `variant-match` (and explain every `else`
+> arm), and decide when *not* to reach for one.
+>
+> **The running project.** You will declare Breakout's vocabularies — its
+> phases, commands, and events — the same way Tetris declares its own.
+
 A game is a conversation between a handful of small vocabularies: phases
 (title/playing/paused/won/over), commands (left/right/…), refusals (wall/…),
 events (spawned/locked/cleared/…), modes. In most codebases these are strings
@@ -84,7 +94,7 @@ An event is not just a tag; the facts a game announces carry their data:
 ```
 
 The constructors are positional, and the accessors are ordinary `variant-match`
-dispatches. This is what lets chapter 6's effects rail turn a `cleared` fact
+dispatches. This is what lets chapter 7's effects rail turn a `cleared` fact
 into *bars over exactly those rows* without a second channel of information.
 
 ## 2.4 The vocabulary IS the design document
@@ -116,6 +126,13 @@ to ruin a DSL codebase is enum-itis.
 
 ## Exercises
 
+0. ⟡ **Running project.** Declare Breakout's three vocabularies:
+   `(define-variant bphase (ready) (playing) (won) (over))`,
+   `(define-variant bcommand (left) (right) (launch))`, and a `bevent`
+   variant with `(bounced)`, `(brick-broken x y)`, `(ball-lost)`. If you
+   hesitate over whether something is a phase or an event, write down the
+   dispatches you imagine — the vocabularies *are* the design.
+
 1. Add `(paused)`-style support for a *hard-drop warning* event: announce
    `(dropped d)` already exists — add `(locked-clear name rows)` that fires
    instead of `locked` when the lock cleared rows, and switch one
@@ -129,6 +146,10 @@ to ruin a DSL codebase is enum-itis.
    a variant? (Hint: who owns the spelling of a physical key?)
 
 ---
+
+✓ **Checkpoint.** You can design a game's data as closed vocabularies — and
+  you know the three questions a new variant must answer: what cases, what
+  payloads, who dispatches.
 
 *Next: [The railway](03-the-railway.md) — every command is a Kleisli arrow, and
 the whole pipeline is one operator.*

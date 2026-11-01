@@ -2,12 +2,31 @@
 
 *The file it dissects: `host/pygame_host.py`, `scheme/main.scm`.*
 
+> **Where you are.** This is the start. You need working Scheme reads —
+> `(define (f x) ...)`, `let`, `cond` — and Python. Nothing else.
+>
+> **By the end of this chapter you can** explain where every line of the game
+> runs, name all sixteen primitives the script may call, and boot your own
+> scripted session against the host.
+>
+> **The running project.** Each chapter ends by adding one piece to a small
+> game you build alongside the reading — a Breakout clone on this same DSL.
+> This chapter: boot a session and draw your paddle.
+
 Most "game scripting" is a Python loop with a few Lua callbacks. This project
 inverts it: **Python is the runtime, Scheme is the program.** Python builds the
 window, the clock, the SDL event queue, and an interpreter environment; then it
 loads `scheme/main.scm` and never touches the game again. Everything you think
 of as "the game" — screens, input policy, gravity, the AI, the campaign ladder,
 even the main loop — is Scheme.
+
+Before diving in, a word on how to read this series: every chapter follows the
+same shape. A **naive version** of an idea, the **reason it fails** in a real
+game, then the version this codebase ships — with the bug scars that motivated
+it. The exercises are not quizzes; they build your Breakout clone piece by
+piece, so by chapter 12 you will have written a second, smaller game in the
+same style, and the techniques will be things you have *done*, not things you
+have *read*.
 
 ## 1.1 The seam is a list of sixteen names
 
@@ -40,7 +59,7 @@ more than they look:
 1. **Reviewability.** A security reviewer (or you, in six months) reads one
    list and knows every effect the script can have on the world. There is no
    `import os` hiding in Scheme-land, because the DSL has no `import`.
-2. **Testability.** Chapter 8 replaces this list with a Scheme fake of the same
+2. **Testability.** Chapter 9 replaces this list with a Scheme fake of the same
    sixteen names and the entire game runs headless in pure Scheme. That is only
    possible because the seam is *closed*.
 
@@ -118,7 +137,7 @@ The seam also splits responsibility by *change rate*:
 
 - **Python owns mechanisms** that must be fast or correct in real time: the
   frame clock, the SDL event queue, the font caches, the held-key repeat pump
-  (chapter 5), the audio device.
+  (chapter 6), the audio device.
 - **Scheme owns policies** that designers iterate on: what a clear is worth,
   how levels grow, which key does what, when a mode is won, what the AI
   prefers.
@@ -130,6 +149,11 @@ draw a rectangle; it has no idea a rectangle might be a Tetris cell.
 
 ## Exercises
 
+0. ⟡ **Running project.** Boot a headless session of your own from Python:
+   build the environment, install the primitives, load a one-line script of
+   yours that calls `(open-window! ...)` and `(draw-rect! ...)`. That colored
+   rectangle is your Breakout paddle — everything you add later hangs off
+   this boot.
 1. Add a seventeenth primitive `window-title!` that renames the window. Touch
    exactly three places: the host's implementation, the seam list, and this
    tutorial's table.
@@ -140,6 +164,10 @@ draw a rectangle; it has no idea a rectangle might be a Tetris cell.
    file, and enjoy the fact that the answer is "ask the host for a primitive."
 
 ---
+
+✓ **Checkpoint.** You can boot the game headless, name every primitive the
+  script can call, and say which side of the seam each responsibility
+  belongs on.
 
 *Next: [Closed vocabularies](02-closed-vocabularies.md) — the five enums that
 run the game, and why forgetting a case is a named error.*

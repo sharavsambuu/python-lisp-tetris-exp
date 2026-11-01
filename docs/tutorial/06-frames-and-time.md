@@ -1,13 +1,24 @@
-# Chapter 5 — Frames and time
+# Chapter 6 — Frames and time
 
 *The files it dissects: `scheme/conductor/arcade.scm` (the loop),
 `host/pygame_host.py` (the clock and the pump).*
+
+> **Where you are.** You can model a match as a value and its transitions as
+> arrows. Nothing moves yet — this chapter is where time arrives.
+>
+> **By the end of this chapter you can** write a frame loop with the four
+> ordering disciplines, bank milliseconds for gravity, clamp dt at the
+> boundary, and explain why the DAS/ARR pump lives in the host and not the
+> game.
+>
+> **The running project.** Breakout's ball starts moving: a frame loop with
+> banked dt, and a dirty flag so quiet frames cost nothing.
 
 A game loop is where "pure functional" meets "60 times a second." This chapter
 walks one frame end to end, then goes deep on the two time disciplines that
 took the longest to get right: gravity banking and the input repeat pump.
 
-## 5.1 One frame, in order
+## 6.1 One frame, in order
 
 The play screen's frame is `play-frame` in the conductor:
 
@@ -53,7 +64,7 @@ Four disciplines, each learned from a bug:
    the AI's lock counter ran away, sounds machine-gunned, frames repainted
    forever. *A pure function that answers "the state after" must be threaded.*
 
-## 5.2 Gravity banks milliseconds
+## 6.2 Gravity banks milliseconds
 
 The naive gravity is `if (elapsed > interval) fall`. The correct one is a
 **bank**: accumulate the frame's dt, pay whole ticks out, keep the remainder.
@@ -90,7 +101,7 @@ Three details that matter:
   victory on the clock's own track, right here — the same `check-victory` the
   lock track uses.
 
-## 5.3 The dt clamp
+## 6.3 The dt clamp
 
 `host/pygame_host.py`:
 
@@ -116,7 +127,7 @@ boundary where time is measured, not in the game logic** — the game should be
 able to trust its dt.
 
 
-## 5.4 The input pump lives in the host
+## 6.4 The input pump lives in the host
 
 Held-key repeat (DAS/ARR) has a natural home, and it took three attempts to
 find it. The final design is the donor project's: the *host* pumps repeats as
@@ -172,7 +183,7 @@ The Scheme side stays trivial — a closed table of which repeats mean anything:
 and one `case` arm in `apply-event` that applies the command *without* the
 press blip — 25 blips a second is a machine gun, not feedback.
 
-## 5.5 The loop is a tail call
+## 6.5 The loop is a tail call
 
 The whole program is:
 
@@ -191,6 +202,11 @@ and "quit" is a fact the host observes.
 
 ## Exercises
 
+0. ⟡ **Running project.** Write Breakout's frame loop: `tick!` for dt, bank
+   the milliseconds toward the ball's next step, move on whole ticks, clamp
+   nothing in game logic — and draw only when the ball moved or a journal
+   fact waits. Then hold a wall-destroying 2-second dt in your head and
+   explain why the clamp lives in the host.
 1. Pause currently freezes gravity by not stepping. Make pause *also* freeze
    the ultra clock and prove it by stepping 100 paused frames and asserting
    `game-clock` is unchanged.
@@ -202,4 +218,8 @@ and "quit" is a fact the host observes.
 
 ---
 
-*Next: [The edge](06-the-edge.md) — screens, menus, and the effects rail.*
+✓ **Checkpoint.** You can write the frame loop in the right order, bank time
+  so no milliseconds are lost, and argue for the pump's home in the host from
+  three failed alternatives.
+
+*Next: [The edge](07-the-edge.md) — screens, menus, and the effects rail.*

@@ -1,13 +1,25 @@
-# Chapter 8 — Testing a game with no mocks
+# Chapter 9 — Testing a game with no mocks
 
 *The files it dissects: `tests/scm/fake-host.scm`, `tests/scm/testkit.scm`,
 `tests/scm/gameplay-tests.scm`, `tests/test_scheme.py`.*
+
+> **Where you are.** Chapters 1–8 built a complete, smart, visible game.
+> Before optimizing anything (chapter 10), you make it *provable*. Everything
+> you built — the pump, the journal, the pipeline — is testable, and this
+> chapter shows how.
+>
+> **By the end of this chapter you can** implement a host contract twice
+> (real + fake), write playthrough tests with seeded clocks, and choose
+> between log assertions, contract tests, and pixel tests.
+>
+> **The running project.** Breakout's bounce contract becomes a test: ball
+> hits wall, direction flips, no frames lost.
 
 Chapter 1 promised that a closed seam makes the game testable. This chapter
 collects the debt: the entire game runs headless in pure Scheme, against a
 **fake host that is itself Scheme**, and the tests read like playthroughs.
 
-## 8.1 The host, as data
+## 9.1 The host, as data
 
 `tests/scm/fake-host.scm` defines all sixteen host primitives in Scheme,
 shadowing the Python ones the pytest harness installed:
@@ -42,7 +54,7 @@ tests honest. Note the comment discipline: wherever the fake makes a choice
 (the text-width measure), the comment names which part is the *contract* and
 which is the *coincidence*.
 
-## 8.2 Scripting the world
+## 9.2 Scripting the world
 
 The fake host exposes a small scripting vocabulary:
 
@@ -58,7 +70,7 @@ The fake host exposes a small scripting vocabulary:
 ```
 
 And the fake host implements the **same repeat pump** as the real one
-(chapter 5), including the dt clamp:
+(chapter 6), including the dt clamp:
 
 ```scheme
 ;; The same clamp the real host runs: a fat test clock must not bill a
@@ -74,7 +86,7 @@ share a timing behavior, test through the fake only if the fake clamps like
 the real thing.**
 
 
-## 8.3 A playthrough is a test
+## 9.3 A playthrough is a test
 
 The DAS contract, end to end (`tests/scm/gameplay-tests.scm`):
 
@@ -107,7 +119,7 @@ Notice what the test *doesn't* assert: "moved 3 columns." A wall would make
 that assertion lie. It asserts the **contract** — one move inside the delay,
 further movement past it — which holds for any piece at any wall.
 
-## 8.4 The kit that collects failures
+## 9.4 The kit that collects failures
 
 `tests/scm/testkit.scm` is a tiny assertion library with one design decision:
 **collect, don't stop.**
@@ -129,7 +141,7 @@ DSL: `define-syntax` does not cross a file boundary here, but procedures do.
 So the sugar (`tk-check`/`tk-assert`) is re-defined as a two-line macro in
 each suite, and all the state lives in the kit.
 
-## 8.5 The pytest harness
+## 9.5 The pytest harness
 
 `tests/test_scheme.py` drives the Scheme files from Python:
 
@@ -151,7 +163,7 @@ Two more tests worth reading in `test_scheme.py`:
 - **the monad laws** — the railway's three properties, pinned so a refactor
   of `result-bind` cannot silently break composition.
 
-## 8.6 Pixel tests, for the one thing fakes can't see
+## 9.6 Pixel tests, for the one thing fakes can't see
 
 `tests/test_host_smoke.py::test_painter_paints` boots the REAL host with the
 SDL dummy driver, plays to a live match, paints one frame, and reads pixels:
@@ -167,7 +179,11 @@ host proves the *sequence* of draw calls; only the real host proves the calls
 
 ## Exercises
 
-1. The fake host's `tint!` records rgb lists. Write the test for chapter 6's
+0. ⟡ **Running project.** Test Breakout's bounce contract through a fake
+   host: ball reaches the wall, direction flips, no frames lost — with a
+   seeded clock so the ball path is a value you can steer. Assert on the
+   journal facts, not on pixels.
+1. The fake host's `tint!` records rgb lists. Write the test for chapter 7's
    exercise 1 (a level-up flash) against that log.
 2. `host-clock! 1000 2000` feeds a fat clock. Find every test that relies on
    the clamp and write the one that would catch its removal.
@@ -176,5 +192,9 @@ host proves the *sequence* of draw calls; only the real host proves the calls
 
 ---
 
-*Next: [Performance in an interpreter](09-performance.md) — where the
+✓ **Checkpoint.** You can fake a host contract faithfully, script a seeded
+  playthrough test, and pick the right assertion level — log, contract, or
+  pixel — for what you are proving.
+
+*Next: [Performance in an interpreter](10-performance.md) — where the
 milliseconds go.*

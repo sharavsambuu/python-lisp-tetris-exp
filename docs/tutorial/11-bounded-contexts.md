@@ -1,7 +1,19 @@
-# Chapter 10 — Bounded contexts
+# Chapter 11 — Bounded contexts
 
 *The files it dissects: the `scheme/` tree as a whole,
 `tests/test_scheme.py` (the purity fence), `scheme/content/campaign.scm`.*
+
+> **Where you are.** You have now seen every layer — seam, data, rules, edge,
+> AI, tests, performance. This chapter zooms out and names the architecture
+> you have been absorbing: bounded contexts, and the fence that proves the
+> layering.
+>
+> **By the end of this chapter you can** place a new feature in the dependency
+> DAG, justify a context's imports from what it may never see, and read the
+> purity-fence failure as a design signal.
+>
+> **The running project.** Breakout gets split into `(breakout board)`,
+> `(breakout game)`, and an edge module — with a purity fence of its own.
 
 Chapter 1 showed the seam between Python and Scheme. This chapter is about the
 seams *inside* the Scheme: the game is organized as **bounded contexts** —
@@ -9,7 +21,7 @@ real R7RS `define-library` modules with explicit export lists — and the
 dependency direction between them is the architecture. This is the "DDD" the
 README flexes, and it is enforced, not aspirational.
 
-## 10.1 A context is a closed scope
+## 11.1 A context is a closed scope
 
 Every pure context is a library:
 
@@ -38,7 +50,7 @@ Three properties, all from the `define-library` form:
    which is why `(tetris result)` re-declares the Result vocabulary and
    imports it explicitly. A library's world is *exactly* its imports.
 
-## 10.2 The dependency DAG, written twice
+## 11.2 The dependency DAG, written twice
 
 The layout in `main.scm` writes the graph top-down; the import lists write it
 again, per-file. The two rules that make this DDD rather than just folders:
@@ -50,7 +62,7 @@ again, per-file. The two rules that make this DDD rather than just folders:
   config file — it validates through the same mode machinery the menu uses,
   but it never sees the pipeline. A new campaign is a diff to data.
 
-## 10.3 The purity fence is a test
+## 11.3 The purity fence is a test
 
 The rule "the domain imports nobody" is checked, in `tests/test_scheme.py`:
 
@@ -67,7 +79,7 @@ in `board.scm` is a red test, not a code review comment.
 **Lesson:** a boundary that matters gets a test. Scope rules decay in
 proportion to how silently they can be broken.
 
-## 10.4 Why the edge is not a library
+## 11.4 Why the edge is not a library
 
 `presentation/view.scm` and `conductor/arcade.scm` are deliberately
 prelude-style modules:
@@ -86,7 +98,7 @@ the host primitives through the import list — at which point the seam
 (chapter 1) would be a formality instead of a fence. Two module kinds, chosen
 by whether the module may see the host, is the whole taxonomy.
 
-## 10.5 Content is a context, not a file
+## 11.5 Content is a context, not a file
 
 `content/campaign.scm` shows the payoff of treating content as a first-class
 context:
@@ -99,13 +111,13 @@ context:
 ;;; (a challenge preset), is a diff to a list below and nothing else.
 ```
 
-The context validates its own references (chapter 11: a bad challenge id
+The context validates its own references (chapter 4: a bad challenge id
 raises a condition naming the valid set), resolves ladders up front ("levels
 is a list of challenges, not ids: the ladder is already resolved"), and keeps
 progress as hash-table values the conductor threads. Designers work here
 without touching a rule.
 
-## 10.6 The contexts, and what each one may know
+## 11.6 The contexts, and what each one may know
 
 | Context | Sees | May never see |
 |---|---|---|
@@ -126,6 +138,9 @@ pixel, no pixel knows a rule.
 
 ## Exercises
 
+0. ⟡ **Running project.** Split Breakout: `(breakout wall)`, `(breakout
+   game)`, and a prelude-style edge module. Write the purity fence test for
+   your own tree — then break it on purpose, once, and read the failure.
 1. Add `(tetris stats)` — a context for lines-per-minute arithmetic — and
    place it in the DAG. Justify its imports from the table above.
 2. Break the fence on purpose: call `sfx!` from `bag.scm` and run the purity
@@ -136,16 +151,9 @@ pixel, no pixel knows a rule.
 
 ---
 
-*Next: [Conditions](11-conditions.md) — errors that name their fix.*
+✓ **Checkpoint.** You can place any new feature in the dependency DAG, and
+  you know why the fence is a test and not a hope.
 
-def test_purity_fence():
-    """The domain libraries must never touch a host primitive."""
-```
+*Next: [The six SRFIs](12-the-srfis.md) — the standard library, doing real
+work.*
 
-The test asserts no host primitive name reaches a domain library's scope.
-This is the step most codebases skip — they *decide* the layering and *hope*
-it holds. Here the decision is executable: an accidental `(draw-rect! ...)`
-in `board.scm` is a red test, not a code review comment.
-
-**Lesson:** a boundary that matters gets a test. Scope rules decay in
-proportion to how silently they can be broken.

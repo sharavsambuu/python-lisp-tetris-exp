@@ -2,6 +2,18 @@
 
 *The files it dissects: everywhere — this chapter is a field guide.*
 
+> **Where you are.** The final chapter, and the reference one. Every technique
+> you have used leaned on a piece of the standard library; this chapter
+> collects the six, each with its real call sites and its judgment call.
+> Read it straight through once, then return to it as a map.
+>
+> **By the end of this chapter you can** name where each of the six SRFIs
+> earns its keep, and — more importantly — where each one is the *wrong*
+> spelling.
+>
+> **The running project.** The last step: replace three hand-rolled loops in
+> your Breakout with the SRFI spellings that shorten them.
+
 The DSL ships six SRFIs, and the game uses every one of them for something
 real. This chapter is the map: for each SRFI, what it is, where it earns its
 keep, and the judgment call of when to reach for it.
@@ -109,7 +121,7 @@ Two things `define*` buys over plain optional args: calls *read* —
 `(new-game seed: 7 mode: 'sprint options: '((target-lines 20)))` says what
 each number means — and defaults live next to the parameter, so the
 constructor's contract is its signature. The mode options are validated by
-`(tetris modes)`, which raises a named condition on a typo (chapter 11)
+`(tetris modes)`, which raises a named condition on a typo (chapter 4)
 rather than guessing.
 
 ## 12.5 SRFI 197 — `chain` for pixel pipelines
@@ -186,6 +198,10 @@ you explain forever; all six here have call sites you can visit in a minute.
 
 ## Exercises
 
+0. ⟡ **Running project.** The last step: replace three hand-rolled loops in
+   your Breakout with the SRFI spellings that shorten them — a fold for a
+   read, a `match` for a table, a `chain` for a coordinate pipeline. If a
+   rewrite is *longer*, that is the lesson.
 1. Find the one place `srfi-1:fold` and a hand-written `let loop` solve the
    same problem in different files. Argue which is right, and whether the
    codebase should standardize.
@@ -195,10 +211,14 @@ you explain forever; all six here have call sites you can visit in a minute.
 3. Rewrite `line-points` as an alist lookup. Which version would you rather
    meet in a review, and what does that say about when `match` is a table?
 
+✓ **Checkpoint.** You know where each of the six SRFIs earns its keep — and
+  you have finished the running project: a second game, written in the same
+  style, by your own hand.
+
 ---
 
-*That completes the series — [the index](README.md) maps every chapter back
-to the README's flex list.*
+*The series ends here. The map is in [the index](README.md); the next
+tutorial worth writing is the one about the feature you build next.*
 
 Python interns the *same* keyword objects the Scheme side assqs on — the
 keyword is the contract between the two languages, checkable by `eq?`.

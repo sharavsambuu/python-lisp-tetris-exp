@@ -1,7 +1,18 @@
-# Chapter 9 — Performance in an interpreter
+# Chapter 10 — Performance in an interpreter
 
 *The files it dissects: `host/pygame_host.py`, findings from cProfile on a
 real session.*
+
+> **Where you are.** The game works and is tested. Now the profiler tells you
+> what 60fps actually costs in an interpreter — and which half of the budget
+> is yours to fix.
+>
+> **By the end of this chapter you can** profile a real session by frame
+> type, cache at the seam without leaking, and defend a step budget as a
+> feature rather than a limit.
+>
+> **The running project.** You profile one Breakout frame, find its
+> interpreter tax, and cache the one thing worth caching.
 
 A Scheme game lives or dies by the same budget as any 60fps game: 16.67ms a
 frame. But in an interpreter, the cost profile is alien — there is no malloc
@@ -9,7 +20,7 @@ storm, no SIMD; there is **per-node dispatch**, and it is everywhere. This
 chapter records what profiling this game actually found, and the fixes that
 mattered.
 
-## 9.1 Measure before you tune — with the real loop
+## 10.1 Measure before you tune — with the real loop
 
 The profile that started the work: `python -m cProfile -m host --headless
 --frames 900 --autostart --play`. Three numbers told the whole story:
@@ -23,7 +34,7 @@ The profile that started the work: `python -m cProfile -m host --headless
 The lesson: profile the *whole* session, not a benchmark harness — the real
 loop's shape (quiet frames vs loud frames vs AI frames) is the data.
 
-## 9.2 Cache at the seam, not in the algorithm
+## 10.2 Cache at the seam, not in the algorithm
 
 The 8.8ms became 0.02ms with two caches in the host's painter:
 
@@ -39,22 +50,22 @@ The principle: **the seam is where frames burn.** A Scheme-side cache would
 have been wrong — the expensive call is the Python one, so the cache belongs
 next to it. Bound the cache (256 entries) so a long session can't leak.
 
-## 9.3 The interpreter's tax, and how to stop paying interest
+## 10.3 The interpreter's tax, and how to stop paying interest
 
 cProfile after the fixes showed the remaining cost is the interpreter's
 per-node dispatch — `evaluate` walking the AST every frame. You cannot remove
 it, but you can stop paying it *twice*:
 
-- **Quiet frames are nearly free.** The dirty flag (chapter 5) means a frame
+- **Quiet frames are nearly free.** The dirty flag (chapter 6) means a frame
   where nothing happened costs a few comparisons. Guard everything expensive
   behind "did the world change."
 - **Facts batch.** The journal is drained once per frame, not per event; the
   painter is called once per frame, not per cell. Ten small seams crossed
   once beat one seam crossed ten times.
-- **Vectors over lists in hot math** (chapter 7's profile): one `vector-copy`
+- **Vectors over lists in hot math** (chapter 8's profile): one `vector-copy`
   plus one `vector-set!` versus allocating a fresh ten-list per cell.
 
-## 9.4 The step budget is a feature
+## 10.4 The step budget is a feature
 
 The DSL raises its step ceiling for a game session — a painted frame costs
 ~1k honest steps, so the interpreter's default hang detector would kill a
@@ -72,10 +83,10 @@ def test_long_session_outlives_the_default_step_budget():
 ```
 
 But keep the budget *on*: `LispBudgetError` ("an endless loop?") is exactly
-what caught the journal-drain bug in chapter 5 — a runaway loop that a
+what caught the journal-drain bug in chapter 6 — a runaway loop that a
 silently-raised ceiling would have hidden as a hang.
 
-## 9.5 The remaining gap, honestly
+## 10.5 The remaining gap, honestly
 
 After everything, quiet frames run ~18ms — above the 16.67ms budget for true
 60fps. The cost is the interpreter's per-node dispatch, distributed across the
@@ -84,7 +95,7 @@ bytecode compiler for the DSL), not another cache. **Know which half of your
 budget is yours to fix.** The host is now cheap; the interpreter is the
 platform, and platforms are earned, not micro-tuned.
 
-## 9.6 A checklist for DSL game performance
+## 10.6 A checklist for DSL game performance
 
 1. Profile the real loop first; name the frame types (quiet / loud / AI).
 2. Cache at the seam; bound every cache.
@@ -96,6 +107,10 @@ platform, and platforms are earned, not micro-tuned.
 
 ## Exercises
 
+0. ⟡ **Running project.** Profile one Breakout frame type-by-type — quiet
+   (ball between bricks), loud (a brick just broke), AI. Cache whatever the
+   profile says is hot, bound the cache, and write down the number that
+   justified it.
 1. Re-run the cProfile yourself and produce the frame-type table (quiet /
    loud / AI) for `--frames 900 --autostart --play`. Compare with the numbers
    above; explain any drift.
@@ -106,5 +121,8 @@ platform, and platforms are earned, not micro-tuned.
 
 ---
 
-*Next: [Bounded contexts](10-bounded-contexts.md) — DDD that the language
+✓ **Checkpoint.** You can profile a session by frame type, cache at the seam
+  with a bound, and say exactly which half of the 16.67ms budget is yours.
+
+*Next: [Bounded contexts](11-bounded-contexts.md) — DDD that the language
 enforces, with the fence that proves it.*

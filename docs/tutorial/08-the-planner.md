@@ -1,7 +1,18 @@
-# Chapter 7 — The one-ply planner
+# Chapter 8 — The one-ply planner
 
 *The files it dissects: `scheme/domain/plan.scm`, `best-placement` and
 `ai-step!` in `scheme/conductor/arcade.scm`.*
+
+> **Where you are.** The game is playable and visible. Part III begins:
+> making it *smart*. This chapter also introduces the discipline the next
+> two depend on — the frame budget.
+>
+> **By the end of this chapter you can** score placements on a height
+> profile, spread a search across frames with a `'pending` protocol, and
+> design a cache key that survives the hold-swap trap.
+>
+> **The running project.** Breakout's paddle learns to track the ball —
+> budgeted, one command a frame, exactly like Tetris's planner.
 
 An AI in an interpreted DSL has a budget problem Python games never feel: a
 frame is ~16ms and every interpreter step costs. The AI here is a one-ply
@@ -9,7 +20,7 @@ placement evaluator — try all 40 placements, score each on the height profile
 it would leave, steer toward the best — and the interesting engineering is
 *how little of it runs per frame*.
 
-## 7.1 The arithmetic: score a profile, not a board
+## 8.1 The arithmetic: score a profile, not a board
 
 `scheme/domain/plan.scm` never sees a game. It scores a **height profile** —
 a vector of ten column heights:
@@ -48,7 +59,7 @@ That is the chapter's first lesson: **in an interpreter, allocation is the
 cost.** The same math on lists was visibly slower; on vectors it is two
 primitive steps per candidate.
 
-## 7.2 The search, budgeted by design
+## 8.2 The search, budgeted by design
 
 `best-placement` (in the conductor) walks 40 placements — 4 rotations × 10
 columns — but scores at most `*best-per-frame*` (6) per call, remembering
@@ -73,7 +84,7 @@ where it stopped:
       (set! *search-key* key))
     (let loop ((scored 0) (i *search-i*))
 
-## 7.3 The piece key: invalidating the plan
+## 8.3 The piece key: invalidating the plan
 
 ```scheme
 (define (piece-key st)
@@ -90,7 +101,7 @@ wrong the moment hold exists — a swap changes the piece without a lock. The
 key is therefore `(locks, piece-name)`. **Every memo needs a wrongness story**:
 know what would invalidate it, and make that thing part of the key.
 
-## 7.4 Steering: one command a frame
+## 8.4 Steering: one command a frame
 
 `ai-step!` runs once per frame and issues **at most one command**:
 
@@ -119,9 +130,9 @@ board, it slams what it has.
 Why one command per frame? Because the player can only press one key per
 frame, and an AI that applies ten moves per frame is playing a different game
 — and because it bounds the AI's cost to a few `apply-command` calls, keeping
-the frame budget honest (see chapter 9).
+the frame budget honest (see chapter 10).
 
-## 7.5 The AI is just another player
+## 8.5 The AI is just another player
 
 The planner sits *on top of* the pipeline: it issues the same `(left)`,
 `(rotate-cw)`, `(hard-drop)` commands a human's keys produce. It has no back
@@ -131,6 +142,11 @@ AI is exercised through exactly the surface a player uses.
 
 ## Exercises
 
+0. ⟡ **Running project.** Teach your paddle to track the ball: score a few
+   candidate paddle positions per frame under a `*best-per-frame*`-style
+   budget, answer `'pending` when the budget runs out, and steer one command
+   per frame. Your AI must issue the same left/right commands a player's keys
+   produce — no back door.
 1. Add a fifth weight, `holes-row` (holes higher in the stack are worse), to
    `placement-score`. The AI should stop digging under the ridge. Turn the
    weight knob up until you can *watch* it change behavior in `--headless`.
@@ -142,7 +158,11 @@ AI is exercised through exactly the surface a player uses.
 
 ---
 
-*Next: [Testing a game with no mocks](08-testing.md) — the host as data.*
+✓ **Checkpoint.** You can budget a search across frames, invalidate a memo
+  with a key that knows its own wrongness, and keep an AI honest by giving
+  it the player's input surface and nothing more.
+
+*Next: [Testing a game with no mocks](09-testing.md) — the host as data.*
 
       (cond ((>= i 40)
              (set! *search-i* i)

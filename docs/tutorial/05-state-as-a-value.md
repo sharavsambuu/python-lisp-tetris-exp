@@ -1,14 +1,25 @@
-# Chapter 4 — State as a value
+# Chapter 5 — State as a value
 
 *The files it dissects: `scheme/domain/board.scm`, `scheme/domain/bag.scm`,
 `scheme/domain/game.scm`.*
+
+> **Where you are.** You have the plumbing (1–3) and the failure channels
+> (4). Now the data itself: what a *match* is, and why the whole thing is a
+> value instead of a pile of mutable fields.
+>
+> **By the end of this chapter you can** build a copy-on-write grid, model a
+> randomizer as a value under a seed, thread updates through one lens, and
+> design a journal whose facts every consumer can use.
+>
+> **The running project.** Breakout's brick wall becomes an immutable
+> vector-of-vectors, and broken bricks become journal facts.
 
 Functional programming in games usually dies at the board: "mutating a 10×20
 grid is obviously fine." This codebase makes the opposite bet — **the whole
 session is a value** — and this chapter shows the three techniques that make
 the bet affordable.
 
-## 4.1 The grid: copy-on-write vectors
+## 5.1 The grid: copy-on-write vectors
 
 `scheme/domain/board.scm`:
 
@@ -71,7 +82,7 @@ One boundary rule worth reading twice — the ceiling does not exist:
 ```
 
 
-## 4.2 The randomizer as a value
+## 5.2 The randomizer as a value
 
 Guideline Tetris deals from a 7-bag. Here the bag is a *pair*: the queue of
 pieces still to deal, and the generator's seed (`scheme/domain/bag.scm`):
@@ -101,7 +112,7 @@ pieces still to deal, and the generator's seed (`scheme/domain/bag.scm`):
 Two payoffs:
 
 - **Seeded matches.** `new-game seed: 7` deals the same match every time. The
-  tests in chapter 8 steer a seeded future instead of mocking randomness.
+  tests in chapter 9 steer a seeded future instead of mocking randomness.
 - **Replays that differ only in the player's hands.** `restart-match` keeps
   the *recipe and the random stream* — the bag continues where it was:
 
@@ -118,7 +129,7 @@ Two payoffs:
 Notice the PRNG is *owned by the domain*, not by Python's `random`. A game
 that can be replayed from a seed cannot have its dice rolled by the runtime.
 
-## 4.3 The aggregate, and `game-with` as a lens
+## 5.3 The aggregate, and `game-with` as a lens
 
 The whole match is one record — phase, board, falling piece, hold slot, bag,
 score line, combo, back-to-back flag, clock, config, and the journal. Updates
@@ -133,7 +144,7 @@ Every field you do not name is carried over unchanged. This is the poor man's
 record update, and it has a property fancy lens libraries would add: **there
 is exactly one place a field is written.**
 
-## 4.4 The journal: facts as data
+## 5.4 The journal: facts as data
 
 The state carries its own event log, newest first:
 
@@ -166,13 +177,13 @@ in the pipeline's comment:
 indices, the scorer needs the count. Record the *richest* form; derive the
 rest.
 
-One warning this codebase earned the hard way (see chapter 5): a journal is a
+One warning this codebase earned the hard way (see chapter 6): a journal is a
 debt. If the consumer forgets to drain it, every stale fact re-fires every
 frame — sounds machine-gun, animations re-award, and the AI's lock counter
 runs away. `journal-drained` returning a *new state* (not mutating) is what
 made that bug possible; the fix was to thread the returned state.
 
-## 4.5 Content is data too
+## 5.5 Content is data too
 
 `scheme/content/campaign.scm` extends the same idea to game design: a
 challenge is a named match recipe — mode, options, goal — and a campaign is an
@@ -189,6 +200,10 @@ cheap, you ship more of it.
 
 ## Exercises
 
+0. ⟡ **Running project.** Build Breakout's brick wall as an immutable
+   vector-of-vectors — `(make-wall)`, `(wall-hit w x y)` answering a *new*
+   wall — and make your ball's position part of a single record updated
+   through one `bwith` lens. Journal a `(brick-broken x y)` fact per hit.
 1. `board-clear` answers `(values fresh n)`. Rewrite it as a fold that keeps
    non-full rows and justify why the fresh board is built top-down.
 2. Snapshot the game state, apply `(rotate-cw)`, and assert the snapshot's
@@ -199,7 +214,11 @@ cheap, you ship more of it.
 
 ---
 
-*Next: [Frames and time](05-frames-and-time.md) — the loop, gravity banking,
+✓ **Checkpoint.** You can build an immutable grid, a value-valued randomizer,
+  and a journal — and you know the one discipline a journal demands: the
+  drained state must be threaded.
+
+*Next: [Frames and time](06-frames-and-time.md) — the loop, gravity banking,
 and why the input pump lives in the host.*
 
 That single `(< y 0) #t` is what lets a piece spawn partly above the matrix —

@@ -1,8 +1,19 @@
-# Chapter 11 — Conditions: errors that name their fix
+# Chapter 4 — Conditions: errors that name their fix
 
 *The files it dissects: `scheme/domain/modes.scm`,
 `scheme/content/campaign.scm`, the conductor's `start-match!`,
 `scheme/core/rop.scm`.*
+
+> **Where you are.** Chapter 3 built the success/failure railway. But a
+> railway only covers the *game's* decisions — a typo in the menu is a
+> different kind of failure, and this chapter gives it its own channel.
+>
+> **By the end of this chapter you can** raise named conditions with
+> actionable irritants, catch them one frame away with `guard`, and name the
+> line between a refusal, a condition, and a bug.
+>
+> **The running project.** Breakout gets a difficulty surface — `lives:`,
+> `ball-speed:` — validated exactly the way Tetris validates `target-lines`.
 
 A typo in a menu is not a crash; it is a *message the player can act on*.
 This codebase's rule: **when a lookup or a validation fails, raise a named
@@ -11,7 +22,7 @@ frame away, where a human can read it.** This is the "conditions" flex from
 the README, and it is the difference between a DSL that fails loudly and one
 that fails silently.
 
-## 11.1 The domain raises; it never guesses
+## 4.1 The domain raises; it never guesses
 
 Mode options are the canonical case (`scheme/domain/modes.scm`). A menu hands
 `new-game` a raw alist — `((target-lines 20) (starting-level 5))` — and
@@ -59,7 +70,7 @@ The same shape for the mode name itself:
 The condition is a plain **list** — message first, irritants after. It is not
 an error object with a stack trace; it is data the catcher renders.
 
-## 11.2 The conductor catches, one frame away
+## 4.2 The conductor catches, one frame away
 
 The raise happens deep in the domain; the catch happens exactly where the
 player pressed the key (`conductor/arcade.scm`):
@@ -80,7 +91,45 @@ player pressed the key (`conductor/arcade.scm`):
       ...)))
 ```
 
-## 11.4 Conditions vs. refusals vs. errors
+Read the guard body's discipline: **put the world back before explaining.**
+The screen returns to the title, the message prints, and the game continues.
+A typo costs a message, never a session.
+
+The renderer is three cases, because the DSL can raise three kinds of thing:
+
+```scheme
+(define (describe-condition e)
+  ;; A raised condition is a list of irritants, or an error object —
+  ;; both render as the message the player can act on.
+  (cond ((list? e) (join " " (map ->text e)))
+        ((error-object? e) (error-object-message e))
+        (else (->text e))))
+```
+
+## 4.3 The same rule, in content
+
+`content/campaign.scm` refuses a bad challenge id the same way:
+
+```scheme
+(define (challenge-by-id id)
+  ;; The challenge named `id`, or a raised condition naming the set —
+  ;; never a silent miss. The conductor's guard turns one into a message.
+  (let loop ((cs *challenges*))
+    (cond ((null? cs)
+           (raise (list "no challenge" id
+                        (string-append "try one of: "
+                                       (join-with ", " (challenge-ids))))))
+          ((string=? (challenge-id (car cs)) id) (car cs))
+          (else (loop (cdr cs))))))
+
+```
+
+Compare with the reflex this replaces: `(or (lookup id) default)`. A default
+converts a typo into a silently wrong game. The raise converts it into a
+sentence. **Silent defaults are how content rots** — the campaign that
+quietly skips a level nobody can explain.
+
+## 4.4 Conditions vs. refusals vs. errors
 
 The codebase draws a three-way line, and it is worth stealing:
 
@@ -95,7 +144,7 @@ invariant is neither. The tests exercise all three: mode configs and their
 named refusals in `domain-tests.scm`, the guard's message path in the UI
 tests.
 
-## 11.5 When a raising computation must join the railway
+## 4.5 When a raising computation must join the railway
 
 One bridge between the two worlds, in `rop.scm`:
 
@@ -113,6 +162,10 @@ chosen neither style.
 
 ## Exercises
 
+0. ⟡ **Running project.** Give Breakout its options — `lives:`, `ball-speed:`
+   — and validate them with `checked-option`-style raises that name the
+   bounds. Then write the `guard` at your `start-match!` equivalent and prove
+   a typo shows a message instead of dying.
 1. Add a bounds check to `starting-level` by hand — then find that
    `option-limits` already did it, and ask what that says about reading a
    table before writing a check.
@@ -124,43 +177,8 @@ chosen neither style.
 
 ---
 
-*Next: [The six SRFIs](12-the-srfis.md) — the standard library, doing real
-work.*
+✓ **Checkpoint.** You can raise a condition that names its fix, catch it one
+  frame away, and sort any failure into refusal, condition, or error.
 
-
-Read the guard body's discipline: **put the world back before explaining.**
-The screen returns to the title, the message prints, and the game continues.
-A typo costs a message, never a session.
-
-The renderer is three cases, because the DSL can raise three kinds of thing:
-
-```scheme
-(define (describe-condition e)
-  ;; A raised condition is a list of irritants, or an error object —
-  ;; both render as the message the player can act on.
-  (cond ((list? e) (join " " (map ->text e)))
-        ((error-object? e) (error-object-message e))
-        (else (->text e))))
-```
-
-## 11.3 The same rule, in content
-
-`content/campaign.scm` refuses a bad challenge id the same way:
-
-```scheme
-(define (challenge-by-id id)
-  ;; The challenge named `id`, or a raised condition naming the set —
-  ;; never a silent miss. The conductor's guard turns one into a message.
-  (let loop ((cs *challenges*))
-    (cond ((null? cs)
-           (raise (list "no challenge" id
-                        (string-append "try one of: "
-                                       (join-with ", " (challenge-ids))))))
-          ((string=? (challenge-id (car cs)) id) (car cs))
-          (else (loop (cdr cs))))))
-```
-
-Compare with the reflex this replaces: `(or (lookup id) default)`. A default
-converts a typo into a silently wrong game. The raise converts it into a
-sentence. **Silent defaults are how content rots** — the campaign that
-quietly skips a level nobody can explain.
+*Next: [State as a value](05-state-as-a-value.md) — the whole session is a
+value you can hold, snapshot, and replay.*

@@ -1,14 +1,25 @@
-# Chapter 6 — The edge
+# Chapter 7 — The edge
 
 *The files it dissects: `scheme/presentation/view.scm`,
 `scheme/conductor/arcade.scm`.*
+
+> **Where you are.** The game now runs — states transform, time passes. This
+> chapter is where the player finally *sees* it, and where you learn the
+> structures that keep edge code from rotting.
+>
+> **By the end of this chapter you can** write a painter as a pure
+> reduction, keep animations in a decayed-state rail fed by journal facts,
+> and wire `view-busy?` into the loop's dirty flag.
+>
+> **The running project.** Breakout gets painted — and a flash when a brick
+> breaks, awarded from the journal exactly like Tetris's clear beam.
 
 The edge is where the game meets the world: screens, keys, sounds, pixels.
 It is also where DSL codebases usually rot into soup. This chapter shows the
 three structures that keep it clean: the painter as a *pure reduction*, the
 menu as *data*, and the effects rail as *decayed state fed by facts*.
 
-## 6.1 The painter is a reduction, not a renderer
+## 7.1 The painter is a reduction, not a renderer
 
 `presentation/view.scm` has no game state of its own (beyond the effects
 rail below). Its whole job:
@@ -42,7 +53,7 @@ A test reads the painted result back *pixel by pixel* through the real host
 cells. The painter is honest enough to be verified against a screenshot's
 coordinates, because it is a pure reduction with no hidden state.
 
-## 6.2 The effects rail: decayed state, fed by facts
+## 7.2 The effects rail: decayed state, fed by facts
 
 Animations are the classic excuse for game-object spaghetti. Here the whole
 rail is a handful of decayed variables in the view, stepped once per frame
@@ -102,11 +113,11 @@ And the rail tells the loop when it still owes frames:
       (danger-tint? st)))
 ```
 
-This is the bridge between the dirty-flag optimization (chapter 5) and
+This is the bridge between the dirty-flag optimization (chapter 6) and
 animations: *nothing happened* is not the same as *nothing is moving*. Without
 `view-busy?`, every animation would freeze the instant the match went quiet.
 
-## 6.3 The award table: the journal becomes feedback
+## 7.3 The award table: the journal becomes feedback
 
 The conductor reads the drained journal and pays out
 (`conductor/arcade.scm`):
@@ -128,7 +139,7 @@ color — and `tint!` crashed the moment the first row cleared. The fix was
 `cadr`. **Alist etiquette: know whether your entries are pairs or two-element
 lists, and put the accessor next to the table.**
 
-## 6.4 Screens and menus as data
+## 7.4 Screens and menus as data
 
 The conductor's screens are a closed symbol set (`title | campaign | mode |
 level | play`) and each screen's content is a *menu value* — a list of
@@ -156,7 +167,7 @@ escape calls `back!` — and `back!` is the whole navigation stack:
 Because menus are values, a menu is trivially testable — build one, move,
 assert the cursor.
 
-## 6.5 One dispatcher for keys, per screen
+## 7.5 One dispatcher for keys, per screen
 
 Every polled event flows through one `dispatch-key!`:
 
@@ -178,9 +189,14 @@ the `case` is the checklist.
 
 ## Exercises
 
+0. ⟡ **Running project.** Paint Breakout: a painter that reduces your state
+   to `draw-rect!` calls with a keyword layout table, plus an effects rail
+   with one flash. Award it from your journal's `(brick-broken x y)` facts in
+   a drain step, and prove the flash finishes by wiring `bview-busy?` into
+   your loop's dirty flag.
 1. Add a screen-flash when the level climbs: journal a `(level-up n)` fact,
    award `view-flash!` with the accent color in the award table, and assert on
-   the fake host's `tint` log (chapter 8).
+   the fake host's `tint` log (chapter 9).
 2. The danger pulse breathes on `*fx-t*`. Make the hold panel's pulse breathe
    on the same clock instead of a flat decay, and decide which reads better.
 3. `menu-move` wraps or clamps depending on its guard. Make the campaign
@@ -188,5 +204,8 @@ the `case` is the checklist.
 
 ---
 
-*Next: [The one-ply planner](07-the-planner.md) — an AI that budgets its
+✓ **Checkpoint.** You can write a painter that is a pure reduction, keep
+  animations in a decayed rail, and make the loop repay animation frames.
+
+*Next: [The one-ply planner](08-the-planner.md) — an AI that budgets its
 thinking like it budgets its frames.*

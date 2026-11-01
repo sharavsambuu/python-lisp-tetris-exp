@@ -2,6 +2,18 @@
 
 *The files it dissects: `scheme/core/rop.scm`, `scheme/rules/pipeline.scm`.*
 
+> **Where you are.** Chapters 1–2 gave you the seam and the vocabularies.
+> This is the chapter where the game starts *working* — and where most
+> codebases reach for `if`. Hold on to chapter 2's refusal idea; it becomes
+> a data type here.
+>
+> **By the end of this chapter you can** implement a Result monad from
+> scratch, compose transitions with the fish operator, and say precisely
+> where a refusal stops and where it doesn't.
+>
+> **The running project.** Breakout's paddle gets left/right arrows that
+> refuse at the walls — through the same railway.
+
 Tetris is a machine for saying no. A slide into a wall says no. A rotation with
 no room says no. A hold with the hold already spent says no. The naive
 implementation is a tangle of `if`s that mutate-or-return; this codebase runs
@@ -165,6 +177,10 @@ report says "the piece locked twice", there is one place to look.
 
 ## Exercises
 
+0. ⟡ **Running project.** Write Breakout's paddle arrows: `(define (paddle st)
+   ...)` gating on a live phase, then `try-shift`-style slides that refuse
+   with `(err (wall))` at the screen edges. Compose them:
+   `((>=> bfalling (cut bshift <> -1)) state)`.
 1. Add a restart confirmation: a new refusal case `(needs-confirm)`, an arrow
    that refuses with it on the first `restart`, and a conductor that turns a
    second press within 2 seconds into the real restart. Count the files you
@@ -176,5 +192,10 @@ report says "the piece locked twice", there is one place to look.
 
 ---
 
-*Next: [State as a value](04-state-as-a-value.md) — the whole session is a
-value you can hold, snapshot, and replay.*
+✓ **Checkpoint.** You can build a Result monad from two constructors and one
+  bind, compose transitions with `>=>`, and read `apply-command` as the
+  table of arrows it is.
+
+*Next: [Conditions](04-conditions.md) — what happens when things go wrong:
+refusals, named conditions, and errors, and why they are three different
+things.*

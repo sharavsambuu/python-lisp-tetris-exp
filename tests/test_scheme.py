@@ -1,7 +1,7 @@
-# tests/test_scheme.py — the pure domain, headless.
+# tests/test_scheme.py — the Scheme suites, headless.
 #
-# Runs tests/scm/domain-tests.scm through the DSL with no pygame: the checks
-# themselves raise on failure, so a clean load *is* the green light.
+# Each suite runs through the DSL with no pygame: the checks themselves
+# raise (or the testkit reports), so a clean load *is* the green light.
 
 from pathlib import Path
 
@@ -19,10 +19,24 @@ SCHEME = ROOT / "scheme"
 TESTS = ROOT / "tests" / "scm"
 
 
+def _load(name, extra_paths=()):
+    env = make_env(search_paths=[SCHEME, *extra_paths])
+    load_lisp(env, TESTS / name)
+    assert env is not None
+
+
 def test_pure_domain():
-    env = make_env(search_paths=[SCHEME])
-    out = load_lisp(env, TESTS / "domain-tests.scm")
-    assert out is None or True  # loading raised is the only failure mode
+    _load("domain-tests.scm")
+
+
+def test_gameplay_behavior():
+    """Whole matches through the real conductor loop, against the fake host."""
+    _load("gameplay-tests.scm", extra_paths=[TESTS])
+
+
+def test_ui_behavior():
+    """Screens and painter calls, asserted against the fake host's draw log."""
+    _load("ui-tests.scm", extra_paths=[TESTS])
 
 
 def test_domain_modules_are_pure_r7rs_libraries():

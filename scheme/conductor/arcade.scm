@@ -648,9 +648,11 @@
                ;; stray keypress should cost a keypress, not a game.
                ((string=? key "escape")
                 (sfx! "pause")
+                (set! *dirty* #t)   ; the veil must paint this frame
                 (values (game-with st phase: (paused)) #f))
                ((string=? key "p")
                 (sfx! "pause")
+                (set! *dirty* #t)   ; the veil must paint this frame
                 (values (game-with st phase: (paused)) #f))
                ((string=? key "q")
                 (quit!)
@@ -730,7 +732,7 @@
             (let-values (((st*** time-moved) (step-time-v *st* dt)))
               (set! *st* st***)
               (view-fx-step! dt)
-              (let* ((anything (or dirty repeated time-moved
+              (let* ((anything (or *dirty* repeated time-moved
                                    (not (null? (game-journal *st*)))))
                      (st**** (if anything
                                  (begin
@@ -824,6 +826,7 @@
         ((phase-paused? *st*)
          (cond ((string=? key "p")
                 (set! *st* (game-with *st* phase: (playing)))
+                (set! *dirty* #t)   ; back to the live picture at once
                 (sfx! "pause"))
                ((string=? key "r")
                 (set! *st* (ok-value (apply-command *st* (restart))))

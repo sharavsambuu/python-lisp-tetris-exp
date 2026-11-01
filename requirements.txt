@@ -1,0 +1,2 @@
+pygame-ce
+git+https://github.com/sharavsambuu/shs-python-scheme-dsl.git

@@ -52,6 +52,128 @@ def test_cheese_and_ultra_boot():
         assert r.returncode == 0, r.stderr[-2000:]
 
 
+def test_long_session_outlives_the_default_step_budget():
+    """A real play session is ONE top-level form that runs for millions of
+    honest steps — the interpreter's 5M hang detector used to kill it about
+    two minutes into a game. The host now raises the ceiling; this runs
+    enough frames to blow past the old budget and must exit clean.
+    """
+    r = run_host("--frames", "4000", "--autostart", "--play", timeout=180)
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert "LispBudgetError" not in r.stderr, r.stderr[-2000:]
+
+
+def test_game_env_raises_the_step_budget():
+    """The regression fence for the mid-play crash: the host's env must set
+    a session-length step budget, not the interpreter's 5M default — a
+    painted frame costs ~1k honest steps, so 5M dies in about two minutes
+    of real play.
+    """
+    import os
+
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+    os.environ["SDL_AUDIODRIVER"] = "dummy"
+    sys.path.insert(0, str(ROOT))
+    import importlib
+
+    import lisp.evaluator
+
+    import host.pygame_host as ph
+
+    host = ph.PygameHost(headless=True)
+    try:
+        ph.make_game_env(host)
+        assert lisp.evaluator.STEPS_BUDGET >= 500_000_000, (
+            "the game session runs under the 5M hang budget: a long match "
+            "will die mid-play")
+    finally:
+        import pygame
+
+        pygame.quit()
+
+
+def test_step_budget_is_a_per_program_ceiling():
+    """The mechanism the fix relies on, proved cheaply: one top-level form
+    carries ONE step budget across every frame, and the budget trips — no
+    matter how honest the steps — when the form outlives it.
+    """
+    import os
+
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+    os.environ["SDL_AUDIODRIVER"] = "dummy"
+    sys.path.insert(0, str(ROOT))
+    import pygame
+
+    from lisp import load_lisp, make_env, run
+    from lisp.errors import LispBudgetError
+    from lisp.types import NIL
+
+    pygame.init()
+    try:
+        env = make_env(search_paths=[SCHEME])
+        install = [
+            ("open-window!", lambda w, h, t: pygame.display.set_mode((640, 640))),
+            ("clear-screen!", lambda rgb: pygame.display.get_surface().fill(tuple(rgb))),
+            ("draw-rect!", lambda x, y, w, h, rgb: pygame.draw.rect(
+                pygame.display.get_surface(), tuple(rgb),
+                pygame.Rect(int(x), int(y), int(w), int(h)))),
+            ("draw-frame!", lambda x, y, w, h, rgb: pygame.draw.rect(
+                pygame.display.get_surface(), tuple(rgb),
+                pygame.Rect(int(x), int(y), int(w), int(h)), width=2)),
+            ("draw-text!", lambda *a: None),
+            ("text-width", lambda s, size: len(str(s)) * size // 2),
+            ("present!", lambda: None),
+            ("tint!", lambda rgb: None),
+            ("tick!", lambda: 16),
+            ("poll-events!", lambda: NIL),
+            ("quit-requested?", lambda: False),
+            ("boot-config", lambda: NIL),
+            ("held?", lambda n: False),
+            ("sfx!", lambda n: None),
+            ("quit!", lambda: None),
+            ("autostart?", lambda: False),
+        ]
+        from lisp import install_primitives
+
+        install_primitives(env, install, source="test_step_budget")
+        for mod in ["core/rop", "domain/geometry", "domain/board", "domain/bag",
+                    "domain/modes", "domain/game", "domain/plan",
+                    "rules/commands", "rules/kicks", "rules/scoring",
+                    "policies/gravity", "rules/pipeline", "content/campaign",
+                    "presentation/view", "conductor/arcade"]:
+            load_lisp(env, SCHEME / (mod + ".scm"))
+
+        run('(open-window! 640 640 "test")', env)
+        run('(boot!)', env)
+        run("(start-match! 'marathon '() 'free #f #f #f)", env)
+
+        import lisp.evaluator
+
+        session = "(let loop ((i 0))" \
+                  "  (if (< i 120)" \
+                  "      (begin (set! *dirty* #t) (arcade-step!) (loop (+ i 1)))" \
+                  "      i))"
+
+        # A tiny ceiling trips mid-session — the hang detector is per form.
+        lisp.evaluator.STEPS_BUDGET = 30_000
+        try:
+            run(session, env)
+            raised = False
+        except LispBudgetError:
+            raised = True
+        assert raised, "a 30k budget survived 120 painted frames?"
+
+        # The host's session ceiling carries the same form to the end.
+        lisp.evaluator.STEPS_BUDGET = 2_000_000_000
+        assert run(session, env) == 120
+    finally:
+        pygame.quit()
+        # Other suites in this process expect the runner's own budget.
+        import lisp.evaluator
+
+        lisp.evaluator.STEPS_BUDGET = 50_000_000
+
+
 def test_painter_paints():
     """One drawn match frame, sampled pixel by pixel.
 

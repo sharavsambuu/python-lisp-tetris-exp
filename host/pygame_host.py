@@ -355,6 +355,15 @@ SCHEME_DIR = Path(__file__).resolve().parent.parent / "scheme"
 
 def make_game_env(host: PygameHost):
     """The environment the game runs in: DSL profile + this host's primitives."""
+    # The step budget is the interpreter's hang detector for ONE top-level
+    # form — and the whole session is one top-level form (`arcade-main`'s
+    # loop). A painted frame costs roughly a thousand honest steps, so the
+    # 5M default dies about two minutes into a real game. The ceiling here
+    # is a session-length bound (hours of play), not a hang detector; the
+    # headless run's frame cap is what bounds an automated run.
+    import lisp.evaluator
+
+    lisp.evaluator.STEPS_BUDGET = 2_000_000_000
     env = make_env(search_paths=[SCHEME_DIR])
     install_primitives(env, host.primitives(), source="host/pygame_host.py")
     return env

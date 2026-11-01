@@ -104,7 +104,7 @@ The purity fence is not a comment; it is enforced by a test
 (`tests/test_scheme.py`):
 
 ```python
-def test_purity_fence():
+def test_domain_modules_are_pure_r7rs_libraries():
     """The domain libraries must never touch a host primitive."""
     ...
 ```

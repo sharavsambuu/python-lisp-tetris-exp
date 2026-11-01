@@ -106,5 +106,5 @@ platform, and platforms are earned, not micro-tuned.
 
 ---
 
-*That's the series. The map is in [the index](README.md) — and the best next
-tutorial is the one you write about the feature you build next.*
+*Next: [Bounded contexts](10-bounded-contexts.md) — DDD that the language
+enforces, with the fence that proves it.*

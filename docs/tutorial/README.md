@@ -20,6 +20,26 @@ chapter with the file it dissects.
 | 7 | [The one-ply planner](07-the-planner.md) | Profile arithmetic, placement scoring, the frame-budgeted search | `scheme/domain/plan.scm`, `best-placement` in the conductor |
 | 8 | [Testing a game with no mocks](08-testing.md) | The host as data, seeded playthroughs, collecting test kits | `tests/scm/fake-host.scm`, `tests/scm/testkit.scm` |
 | 9 | [Performance in an interpreter](09-performance.md) | Where the milliseconds go, caches, quiet frames, the step budget | `host/pygame_host.py`, cProfile findings |
+| 10 | [Bounded contexts](10-bounded-contexts.md) | DDD with `define-library`: closed scopes, the dependency DAG, the purity fence | the `scheme/` tree, `tests/test_scheme.py` |
+| 11 | [Conditions](11-conditions.md) | `raise`/`guard` with named irritants; refusals vs conditions vs errors | `scheme/domain/modes.scm`, `conductor/arcade.scm` |
+| 12 | [The six SRFIs](12-the-srfis.md) | SRFI 1/26/88/89/197/241 — where each earns its keep, and the judgment calls | everywhere |
+
+## What the root README flexes → where the series teaches it
+
+| The flex | The chapters |
+|---|---|
+| **DDD** (bounded contexts, dependency direction, purity fence) | [1](01-the-seam.md), [10](10-bounded-contexts.md) |
+| **Typed control flow** (`define-variant` / `variant-match`) | [2](02-closed-vocabularies.md) |
+| **ROP** (every transition a Kleisli arrow) | [3](03-the-railway.md) |
+| **Monadic pipelines** (one `result-bind`, do-notation, traversals) | [3](03-the-railway.md), [5](05-frames-and-time.md) (gravity through the railway) |
+| **Conditions** (raise by name, guard at the conductor) | [11](11-conditions.md) |
+| **Functional programming** (the session as a value, journal as data) | [4](04-state-as-a-value.md), [5](05-frames-and-time.md) |
+| **SRFI 1** (folds, `every`, `find`, `count`, `iota`, `list-index`) | [12](12-the-srfis.md) (§12.1), [4](04-state-as-a-value.md) |
+| **SRFI 26** (`cut` specializes arrows) | [12](12-the-srfis.md) (§12.2), [3](03-the-railway.md) |
+| **SRFI 88** (keywords name the tables and event keys) | [12](12-the-srfis.md) (§12.3), [6](06-the-edge.md) |
+| **SRFI 89** (`define*` gives the difficulty surface its knobs) | [12](12-the-srfis.md) (§12.4), [4](04-state-as-a-value.md) |
+| **SRFI 197** (`chain` shapes the pixel pipelines) | [12](12-the-srfis.md) (§12.5), [6](06-the-edge.md) |
+| **SRFI 241** (`match` reads the keymap and award tables) | [12](12-the-srfis.md) (§12.6), [2](02-closed-vocabularies.md) |
 
 ## Running the game while you read
 

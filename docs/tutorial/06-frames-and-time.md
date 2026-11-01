@@ -92,6 +92,25 @@ spends the bank (`step-time`), and stops the moment the phase changes under it:
         (result-bind (soft-fall s) (cut loop <> (+ i 1))))))
 ```
 
+### The bank, in numbers
+
+One second of play at level 1 (interval 900ms), frame by frame:
+
+| frame | dt | owed = bank + dt | ticks | new bank | the piece |
+|------:|---:|-----------------:|------:|---------:|-----------|
+| 1–55 | 16 | 16 … 880 | 0 | 16 … 880 | waits |
+| 56 | 16 | 896 | 0 | 896 | waits |
+| 57 | 16 | 912 | **1** | **12** | falls one row |
+| 58–111 | 16 | 28 … 888 | 0 | … | waits |
+| 112 | 16 | 904 | **1** | **4** | falls again |
+
+Two things to notice. First, the tick lands on frame 57, not 56.25 — the
+bank *absorbs* the fact that frames are indivisible, and the 12ms remainder
+is why the next tick comes at frame 112 and not 113. Second, imagine a level
+up between frames 57 and 112 (interval drops to, say, 600): the banked
+remainder keeps counting — no milliseconds are lost at level changes, which
+is the whole reason the bank lives in the state instead of a local.
+
 Three details that matter:
 
 - **The bank lives in the game state**, so a paused match freezes time by
@@ -158,6 +177,34 @@ for key, remaining in list(self._held.items()):
         events.append([[K_TYPE, T_KEY_REPEAT], [K_KEY, name]])
         remaining += REPEAT_INTERVAL_MS
     self._held[key] = remaining
+```
+
+### The pump, in numbers
+
+You press and hold `left` at frame 0. With dt = 16ms per frame:
+
+| frame | countdown after this frame | events |
+|------:|---------------------------:|--------|
+| 0 (KEYDOWN) | 150 − 16 = 134 | the press itself → one move |
+| 1–8 | 118 … 22 | silence — 128ms in, still inside the delay |
+| 9 | 6 | silence |
+| 10 | 6 − 16 = **−10** → fire, re-arm to 30 | one `key-repeat` |
+| 11 | 14 | — |
+| 12 | −2 → fire, re-arm to 38 | one `key-repeat` |
+| 13–15 | 22, 6, −10 → fire | one every 2–3 frames |
+
+Steady state: a repeat every 40ms of *game time*, which at 60fps is 2–3
+frames — and at 30fps is 1–2 frames. The rate is in **milliseconds**, not
+frames, which is the entire point: halve the frame rate and the glide speed
+stays the same. A frame-counting pump would glide half as fast on a slow
+machine.
+
+The events themselves are the same alist shape every other event uses, so the
+conductor's fold never special-cases them:
+
+```scheme
+;; what one poll hands back, when a key came due:
+(((type: . key-repeat) (key: . "left")))
 ```
 
 Why the host and not the game? Three failures taught the lesson:

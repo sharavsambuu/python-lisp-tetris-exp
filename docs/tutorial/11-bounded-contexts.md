@@ -53,7 +53,28 @@ Three properties, all from the `define-library` form:
 ## 11.2 The dependency DAG, written twice
 
 The layout in `main.scm` writes the graph top-down; the import lists write it
-again, per-file. The two rules that make this DDD rather than just folders:
+again, per-file. The rules layer shows the pattern at its densest — it is the
+*aggregation point* of the whole domain:
+
+```scheme
+(define-library (tetris rules)
+  (import (scheme base)
+          (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+          (srfi 26)
+          (tetris result)
+          (tetris geometry) (tetris board) (tetris bag) (tetris modes)
+          (tetris game)
+          (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity))
+  (export refusal? apply-command apply-commands step-time ...))
+```
+
+That import list *is* the rules layer's bill of materials: the railway for
+control flow, five domain contexts for the state it transforms, three rule
+tables for the vocabulary it applies. A reviewer can certify "the rules touch
+nothing but the domain and the railway" by reading eleven lines — which is
+what makes the purity fence (below) cheap to enforce.
+
+The two rules that make this DDD rather than just folders:
 
 - **The domain imports nobody.** `(tetris board)` cannot call `draw-rect!`,
   and `(tetris bag)` cannot read `boot-config`. The domain doesn't know a
@@ -114,8 +135,38 @@ context:
 The context validates its own references (chapter 4: a bad challenge id
 raises a condition naming the valid set), resolves ladders up front ("levels
 is a list of challenges, not ids: the ladder is already resolved"), and keeps
-progress as hash-table values the conductor threads. Designers work here
+progress as pure alist updates the conductor threads. Designers work here
 without touching a rule.
+
+The progress updates are the same copy-on-write discipline as chapter 5's
+board, applied to game design:
+
+```scheme
+;; A level key: campaign id + 1-based position. Stable across edits to
+;; the ladder's titles and goals.
+(define (level-key campaign-id index)
+  (string-append campaign-id ":" (number->string index)))
+
+(define (mark-done done key)
+  ;; Pure and idempotent: raising a stored pass is a no-op, so a frame
+  ;; may call it freely.
+  (if (level-done? done key)
+      done
+      (cons (list key #t) done)))
+
+(define (record-best bests mode-label score)
+  (if (> score (best-for bests mode-label))
+      (cons (list mode-label score)
+            (filter (lambda (e) (not (string=? (car e) mode-label))) bests))
+      bests))
+```
+
+Two details repay attention. The **level key** is `campaign:index`, not the
+challenge's title — so renaming "First Lines" to "First Steps" never corrupts
+a player's progress. And `mark-done` is *idempotent by construction*: the
+conductor may call it every frame after a win without a guard, because a
+second mark answers the same set. Pure updates make edge state cheap to
+reason about — the same argument as the journal, one layer up.
 
 ## 11.6 The contexts, and what each one may know
 

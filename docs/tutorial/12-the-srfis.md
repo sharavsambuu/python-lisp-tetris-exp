@@ -50,6 +50,28 @@ The same SRFI everywhere else:
 rule the codebase follows: folds for reads, `let loop` for anything with an
 early exit or two accumulators that disagree.
 
+The bag's shuffle shows SRFI 1's `take`/`drop` pair doing the picker's work —
+and the whole shuffle is a fold over a seed:
+
+```scheme
+;; A shuffle expressed as a fold: walk the list, taking each pick from a
+;; position drawn off the generator, building the shuffled bag on the way.
+(define (shuffle xs seed)
+  (let loop ((items xs) (seed seed) (acc '()))
+    (if (null? items)
+        (values acc seed)
+        (let* ((seed* (next-seed seed))
+               (i (modulo seed* (length items)))
+               (picked (list-ref items i))
+               (rest (append (take items i) (drop items (+ i 1)))))
+          (loop rest seed* (cons picked acc))))))
+```
+
+Two accumulators moving in lockstep — the shrinking list and the advancing
+seed — with `values` handing both back. A named-`let` loop is the honest
+spelling here: the body mutates *nothing*, and the seed threading is visible
+in every recursive call.
+
 ## 12.2 SRFI 26 — `cut`, the arrow specialization
 
 Partials without lambda noise. The dispatcher (chapter 3) is unreadable
@@ -69,6 +91,31 @@ and the resumable loops in the pipeline lean on it too:
 state first, dx/dy after, and only `cut` can specialize the tail. Where the
 hole is last, plain section syntax or a lambda is fine; the codebase uses
 `cut` exactly where argument order demands it, not as a style accent.
+
+The purest example is in geometry, where rotations are *generated* rather
+than transcribed:
+
+```scheme
+;; One CW rotation in an n box: (x y) -> (n-1-y x). Our y grows downward,
+;; so this is the screen-honest spelling of the SRS turn.
+(define (rotated-cell n cell)
+  (cons (- (- n 1) (cdr cell)) (car cell)))
+
+(define (all-rotations name)
+  (let ((n (piece-box name)))
+    (let loop ((r 0) (cells (shape-of name)) (acc '()))
+      (if (= r 4)
+          (reverse acc)
+          (loop (+ r 1)
+                (map (cut rotated-cell n <>) cells)
+                (cons cells acc))))))
+```
+
+`(cut rotated-cell n <>)` binds the box size and leaves the cell open — the
+exactly-once-specialized mapper that four lambdas would stutter. And notice
+what the generator buys: no rotation table *can* drift from the spawn shape
+it came from, because the rotations are derived. Compare with transcribing
+sixteen cell lists by hand and trusting the seventh.
 
 ## 12.3 SRFI 88 — keywords as named-options atoms
 
@@ -228,6 +275,20 @@ keyword is the contract between the two languages, checkable by `eq?`.
 ```scheme
 (define (piece-color name)
   (color (string->keyword (symbol->string name))))
+```
+
+**The shape table** (`geometry.scm`) — the same atoms make the spawn shapes
+read like a literal, and the lookup needs no quoting:
+
+```scheme
+;; Spawn shapes: name -> (keyword . cells), cells as (x . y) in the box.
+;; The keywords are SRFI 88 objects — self-evaluating, so the table reads
+;; like a literal and assq finds entries without quoting.
+(define spawn-shapes
+  (list (cons 'i: '((0 . 1) (1 . 1) (2 . 1) (3 . 1)))
+        (cons 'o: '((0 . 0) (1 . 0) (0 . 1) (1 . 1)))
+        (cons 't: '((1 . 0) (0 . 1) (1 . 1) (2 . 1)))
+        ...))
 ```
 
 **When:** a small, fixed set of named options read by `assq`. **When not:**

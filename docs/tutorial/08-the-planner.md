@@ -59,6 +59,46 @@ That is the chapter's first lesson: **in an interpreter, allocation is the
 cost.** The same math on lists was visibly slower; on vectors it is two
 primitive steps per candidate.
 
+### One placement, scored by hand
+
+The live weights are `(weights 2.0 2.5 0.5 0.6)` — cleared, holes, bumpiness,
+wells. Take a nearly empty board whose profile is `#(0 0 0 0 0 0 0 0 0 0)`,
+and drop a T piece flat at x=4, landing at row 19. The T's cells raise
+columns 4, 5, 6 to height 1:
+
+```scheme
+#(0 0 0 0 1 1 1 0 0 0)     ; the raised profile
+```
+
+Now the terms, term by term:
+
+- **cleared** = `min-of` raised = 0 — the lowest column is still the floor.
+- **holes** = 0 — nothing is buried; the piece sits on the floor.
+- **bumpiness** = |0−0| + |0−0| + |0−0| + |0−1| + |1−1| + |1−1| + |1−0| + …
+  = 2 — two steps at the T's edges.
+- **wells** = 0 — no column is lower than both neighbors.
+
+```
+score = 2.0×0 − (2.5×0 + 0.5×2 + 0.6×0) = −1.0
+```
+
+Every placement on an empty board scores small negatives like this; the
+planner simply picks the least bad. The terms earn their keep later — drop
+that same T *one column left* (x=3) and the raised profile is
+`#(0 0 0 1 1 1 0 0 0 0)`: bumpiness is still 2, but now consider a board with
+a hole at column 4. Covering it scores `holes = 1` → −2.5, a penalty no
+bumpiness saving can justify. That asymmetry — holes are expensive, flatness
+is cheap — is the whole personality of the AI, and it comes entirely from the
+weights, which are data:
+
+```scheme
+;; the conductor's choice:
+(define *weights* (weights 2.0 2.5 0.5 0.6))
+```
+
+Because the weights are a value, chapter 9's tests can steer the planner, and
+a designer can publish a "dumber" set without touching the arithmetic.
+
 ## 8.2 The search, budgeted by design
 
 `best-placement` (in the conductor) walks 40 placements — 4 rotations × 10
@@ -183,3 +223,28 @@ Read the three answers it can give:
 frames, with its progress in variables instead of a continuation. A piece
 takes ~7 frames to fully plan (40 ÷ 6), which is free — the piece is falling
 anyway.
+
+The candidate generator the loop scores against is itself a pure probe from
+the pipeline — `landing-y-at`, the same function the ghost reads:
+
+```scheme
+;; Where the piece would land if it were at column `x` in rotation `rot`
+;; — the AI's pure probe. `#f` when that placement does not even fit at
+;; the piece's current height (a rotation into a wall), which is how the
+;; planner tells an impossible placement from a bad one.
+(define (landing-y-at state x rot)
+  (let* ((p (game-active state))
+         (name (falling-name p)))
+    (if (not (fits-at? state name rot x (falling-y p)))
+        #f
+        (let loop ((y (falling-y p)))
+          (if (fits-at? state name rot x (+ y 1))
+              (loop (+ y 1))
+              y)))))
+```
+
+Notice the two answers it can give: a row, or `#f`. The `#f` is not an error —
+it is how the planner *skips* a placement cheaply. In `best-placement`'s loop,
+a refused placement "costs only the crossing" — it does not spend the frame's
+score budget — so a wall-adjacent piece does not burn its planning frames on
+positions that do not exist.

@@ -129,6 +129,35 @@ Two payoffs:
 Notice the PRNG is *owned by the domain*, not by Python's `random`. A game
 that can be replayed from a seed cannot have its dice rolled by the runtime.
 
+Two more bag reads the game leans on, both pure. `bag-peek` reads the future
+without consuming it — the NEXT panel is drawn from it:
+
+```scheme
+;; The next n piece names, without consuming them. A peek into the future.
+(define (bag-peek st n)
+  (take (car st) n))
+```
+
+```scheme
+;; view.scm — the next three, drawn in the panel, in their colors.
+(let loop ((names (bag-peek (game-bag st) 3)) (i 0)) ...)
+```
+
+And determinism is itself a test — the same seed, the same deal:
+
+```scheme
+;; Determinism: the same seed, the same deal.
+(check (bag-queue (make-bag 1234)) (bag-queue (make-bag 1234)))
+
+;; The peek never differs from what the draws answer.
+(let-values (((first-bag-draw st*) (bag-next (make-bag 7))))
+  (check (car (bag-peek (make-bag 7) 3)) first-bag-draw))
+```
+
+That second check is the quiet one worth noticing: a peek that diverged from
+the draws would be a *plausible* bug — the NEXT panel would show a piece that
+never arrives — and only a test that compares the two reads catches it.
+
 ## 5.3 The aggregate, and `game-with` as a lens
 
 The whole match is one record — phase, board, falling piece, hold slot, bag,
@@ -143,6 +172,32 @@ keyword arguments:
 Every field you do not name is carried over unchanged. This is the poor man's
 record update, and it has a property fancy lens libraries would add: **there
 is exactly one place a field is written.**
+
+The lens composes into constructors. `fresh-game` — what the conductor boots
+into and what the tests use to skip the title screen — is three `game-with`
+calls deep:
+
+```scheme
+;; A game that is already falling: what the conductor boots into, and what
+;; the tests use to skip the title screen.
+(define (fresh-game . args)
+  (let ((g (apply new-game args)))
+    (let-values (((piece bag) (bag-next (game-bag g))))
+      (let* ((name piece)
+             (p (make-falling name (spawn-x-for name) spawn-y 0)))
+        (game-with (game-with g
+                              phase: (playing)
+                              active: p
+                              bag: bag
+                              journal: '())
+                   journal: (list (spawned name)))))))
+```
+
+Read the last two lines closely: the inner call names four fields; the outer
+call *replaces the journal* — because the inner call's generic update must
+not look like a fresh match's history. Nesting lenses reads top-down as
+"deal a piece, then announce the spawn," and each step is one field-level
+decision.
 
 ## 5.4 The journal: facts as data
 
@@ -224,3 +279,41 @@ and why the input pump lives in the host.*
 That single `(< y 0) #t` is what lets a piece spawn partly above the matrix —
 a domain rule expressed as four lines of collision, not as a special case
 smeared across the spawn code.
+
+### The immutability, proved
+
+The value semantics are not a promise; the domain tests pin them
+(`tests/scm/domain-tests.scm`):
+
+```scheme
+;; Fill the bottom row across all ten columns: full, then clear.
+(define b1
+  (board-place b0 'i (map (lambda (x) (cons x 19)) (iota matrix-width))))
+(assert "the row is full now" (equal? (full-rows b1) '(19)))
+(assert "the original board is untouched" (board-empty? b0))
+```
+
+The second assertion is the whole chapter in one line: after placing a piece,
+`b0` — the *input* — is still empty. The same test file checks the boundary
+rule from both sides:
+
+```scheme
+;; Collision: walls refuse, the ceiling does not.
+(assert "left wall is solid"
+        (not (cells-fit? b0 '((0 . 0) (-1 . 0)))))
+(assert "the floor is solid"
+        (not (cells-fit? b0 '((0 . 20)))))
+(assert "above the ceiling is free"
+        (cells-fit? b0 '((0 . -1) (1 . -1))))
+```
+
+And `column-heights` — the read the AI's whole scoring stands on — is
+asserted against a literal vector, so the reader can see the shape:
+
+```scheme
+(check (column-heights (board-place b0 'o (cells-at 'o 0 4 18)))
+       '#(0 0 0 0 2 2 0 0 0 0))
+```
+
+An O dropped at column 4 shows up as two columns of height 2. When you debug
+the planner in chapter 8, this is the number it thinks with.

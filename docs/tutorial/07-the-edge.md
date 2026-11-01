@@ -48,6 +48,28 @@ and the palette is the same shape keyed by piece name — note the keyword
 round-trip, `(string->keyword (symbol->string name))`, that turns a piece
 symbol into its palette entry without a single `case`.
 
+The reduction itself is barely a page. The settled board is drawn by one
+`for-each` over an alist of `((x . y) . name)` cells:
+
+```scheme
+(define (draw-board! st)
+  (let ((s (cell-size)))
+    (for-each
+     (lambda (entry)
+       (let ((pos (car entry)) (name (cdr entry)))
+         (draw-rect! (px (car pos)) (py (cdr pos)) s s
+                     (piece-color name))))
+     (board-cells (game-board st)))))
+```
+
+Every interesting decision is *elsewhere*: what the cells are is the board's
+job, where they land on screen is `px`/`py`'s (scale, origin, shake), and
+what color they wear is the palette's. The painter is the one place those
+three answers meet — and it meets them without owning any of them. That is
+the "pure reduction" property in miniature: hold the painter's input fixed
+and its draw-call log is a deterministic function of it, which is exactly
+what chapter 9's fake-host tests assert against.
+
 A test reads the painted result back *pixel by pixel* through the real host
 (`tests/test_host_smoke.py::test_painter_paints`): background, well frame,
 cells. The painter is honest enough to be verified against a screenshot's
@@ -97,6 +119,35 @@ The division of labor is strict:
 - **The view owns the decay** — how an award wears off. No game rule reads
   any of these variables; the rail is purely presentational.
 
+The same split governs sound, and it answers a subtle design question: when
+one frame contains *several* facts — a lock, a clear, a level up — which
+sound plays? The conductor's answer is a **ranking table**, loudest first,
+and a search for the biggest fact in the drain:
+
+```scheme
+(define *sfx-fact*   ;; (fact-tag kind), loudest first
+  '((game-over "over")
+    (victory   "victory")
+    (level-up  "level-up")
+    (cleared   "clear")
+    (restarted "start")))
+
+(define (sfx-journal! events)
+  (let loop ((order *sfx-fact*))
+    (if (null? order)
+        (for-each sfx-event! events)
+        (let ((hit (find (lambda (ev) (eq? (tag-of ev) (car (car order))))
+                         events)))
+          (if hit
+              (sfx! (cadr (car order)))
+              (loop (cdr order)))))))
+```
+
+The loop plays *one* headline — the first table row that matches any fact in
+the drain — and then the per-event sounds (moves, rotations) still play
+underneath. Reordering the list *is* the mixing decision; no code changes
+when the designer decides a level-up should out-shout a clear.
+
 
 And the rail tells the loop when it still owes frames:
 
@@ -138,6 +189,26 @@ history: the first version read `(cdr (assq ...))` on an entry like
 color — and `tint!` crashed the moment the first row cleared. The fix was
 `cadr`. **Alist etiquette: know whether your entries are pairs or two-element
 lists, and put the accessor next to the table.**
+
+The rest of the award table shows how small per-fact feedback stays. A long
+slam shakes; a swap pulses the hold panel; the big moments flash in their own
+colors:
+
+```scheme
+((dropped d)
+ (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
+((hold-swapped) (view-hold-pulse!))
+((hold-refused) (fx-thud! 1.0))
+((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
+((victory) (view-flash! '(230 230 240) 220))
+((game-over) (view-flash! '(160 40 40) 260))
+```
+
+Six lines, six feedback personalities, all derived from facts the *rules*
+already announced. Note what is absent: the award table never asks "what
+score did this clear pay" — that would couple presentation to scoring. It
+reads only the *facts*, which is why a scoring change can never silently
+change an animation.
 
 ## 7.4 Screens and menus as data
 

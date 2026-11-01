@@ -53,6 +53,49 @@ The names, grouped by what they own:
 | sound | `sfx!` |
 | boot/teardown | `boot-config`, `autostart?`, `quit!` |
 
+### One primitive, from both sides
+
+It is worth seeing one primitive end to end, because every one of the sixteen
+follows the same shape. On the Python side, a method on the host object:
+
+```python
+def text_width(self, s, size) -> int:
+    return self._font(size).size(str(s))[0]
+```
+
+On the Scheme side, an ordinary call:
+
+```scheme
+(text-width "SCORE" 18)   ; ⇒ some pixel count
+```
+
+No marshalling layer, no IDL, no code generation. The DSL's `Primitive`
+wrapper takes the Python callable and makes it a Scheme procedure; arguments
+cross as native values (strings, numbers, lists, the DSL's keyword objects).
+That simplicity is *why* the seam stays at sixteen names — adding a seventeenth
+is a method plus one line in the list, so there is no economy-of-scale
+pressure to build a kitchen-sink primitive like `draw-ui!` that smuggles
+decisions across the boundary.
+
+The same symmetry applies to *data*. The boot config crosses as an alist the
+Scheme side can `assq`:
+
+```python
+# The CLI as the alist Scheme boots from:
+# ((mode . "sprint") (level . 5) (seed . 7) (ai . #t) (autostart . #t))
+# — only the flags the run actually carried.
+def boot_config(self) -> list: ...
+```
+
+```scheme
+(let ((entry (assq 'mode (boot-config))))
+  (if entry (cadr entry) 'marathon))
+```
+
+Python builds a list of pairs; Scheme reads it with the ordinary list tools.
+The host never needs to know what a "mode" *means* — it only reports what the
+command line said.
+
 That is the whole contract. Two properties fall out of it, and both are worth
 more than they look:
 
@@ -94,6 +137,14 @@ more than they look:
 The order *is* the dependency graph, written top to bottom. Notice what is
 absent: no import machinery, no registry, no plugin discovery. An embedded DSL
 earns its keep when the whole program is data you can read in one screen.
+
+One subtlety hides in the word `load`. Loading a `define-library` file
+*registers* the library — its body does not run until something first imports
+it. So `main.scm` reads top-down as "here are the contexts, in dependency
+order," while the actual evaluation order is decided by the import graph. The
+two edge modules (`view`, `conductor`) are the exception: not being libraries,
+their bodies run at load, which is exactly when their top-level defines need
+to exist for `arcade-main` to see them.
 
 ## 1.3 Two kinds of module, on purpose
 

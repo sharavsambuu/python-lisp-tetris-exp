@@ -46,6 +46,43 @@ self._fonts: dict[int, pygame.font.Font] = {}
 self._text_cache: dict[tuple, pygame.Surface] = {}
 ```
 
+and the read path shows every decision:
+
+```python
+def _font(self, size: int) -> pygame.font.Font:
+    """One Font per size, built once — never per call."""
+    size = int(size)
+    font = self._fonts.get(size)
+    if font is None:
+        font = pygame.font.Font(None, size)
+        self._fonts[size] = font
+    return font
+
+def draw_text(self, x, y, s, size, rgb) -> None:
+    color = tuple(int(c) for c in rgb)
+    key = (str(s), int(size), color)
+    surface = self._text_cache.get(key)
+    if surface is None:
+        if len(self._text_cache) > 256:
+            self._text_cache.clear()  # the ticker's old numbers age out
+        surface = self._font(size).render(str(s), True, color)
+        self._text_cache[key] = surface
+    self._require_display().blit(surface, (int(x), int(y)))
+```
+
+Three decisions in ten lines, each worth naming:
+
+1. **The key is the full render input** — `(text, size, color)`. A cache
+   keyed on text alone would paint the score in the wrong color the first
+   time a second color appeared.
+2. **The bound is a clear, not an LRU.** The score ticker produces a new
+   string every frame it rolls (`"120"`, `"130"`, …), so old entries are
+   garbage by definition. `clear()` at 256 is O(1) amortized and the working
+   set — a dozen labels — is never at risk.
+3. **The unbounded cache is the small one.** `_fonts` is keyed by size, and
+   the game uses three sizes; it can never grow. Know which cache is bounded
+   and *why*, or you will "fix" the wrong one.
+
 The principle: **the seam is where frames burn.** A Scheme-side cache would
 have been wrong — the expensive call is the Python one, so the cache belongs
 next to it. Bound the cache (256 entries) so a long session can't leak.

@@ -157,11 +157,62 @@ be the pass/fail. The *content* of testing lives in Scheme, next to the code
 it tests. Keep it that way: a test suite split across two languages ages
 badly unless the Python side is dumb glue.
 
+The whole harness is one helper:
+
+```python
+# tests/test_scheme.py — the Scheme suites, headless.
+#
+# Each suite runs through the DSL with no pygame: the checks themselves
+# raise (or the testkit reports), so a clean load *is* the green light.
+
+lisp.evaluator.STEPS_BUDGET = 50_000_000
+
+def _load(name, extra_paths=()):
+    lisp.evaluator.STEPS_BUDGET = 50_000_000
+    env = make_env(search_paths=[SCHEME, *extra_paths])
+    load_lisp(env, TESTS / name)
+    assert env is not None
+```
+
+The budget line deserves its own comment (it has one in the file): the domain
+tests steer a whole sprint match through the one-ply planner — hundreds of
+thousands of interpreter steps in one top-level form. The interpreter's
+default 5M-step budget is a *hang detector* for production runs; a test that
+*is* a long computation asks for more. The number lives in the harness, not
+in the game, so a stuck game loop still dies loudly.
+
 Two more tests worth reading in `test_scheme.py`:
 
 - **the purity fence** — the domain libraries never touch a host primitive;
 - **the monad laws** — the railway's three properties, pinned so a refactor
   of `result-bind` cannot silently break composition.
+
+And the deepest suite, `domain-tests.scm`, shows the *character* of DSL
+testing: assertions as sentences, one behavior each. A sample from the board
+section:
+
+```scheme
+(define b0 (make-board))
+(assert "a new board is empty" (board-empty? b0))
+
+;; Fill the bottom row across all ten columns: full, then clear.
+(define b1
+  (board-place b0 'i (map (lambda (x) (cons x 19)) (iota matrix-width))))
+(assert "the row is full now" (equal? (full-rows b1) '(19)))
+(assert "the original board is untouched" (board-empty? b0))
+```
+
+Even the monad laws read as behavior, not as category theory:
+
+```scheme
+(define (halve n) (if (even? n) (ok (/ n 2)) (err "odd")))
+```
+
+…then left identity, right identity, and associativity are asserted over
+`halve` — three `check`s that would catch a `result-bind` that ran the next
+arrow on failures, or dropped the carried value. When a law has a concrete
+witness like `halve`, a failure message points at the *behavior* that broke,
+not at a Greek letter.
 
 ## 9.6 Pixel tests, for the one thing fakes can't see
 

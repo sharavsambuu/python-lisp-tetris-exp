@@ -97,6 +97,52 @@ The constructors are positional, and the accessors are ordinary `variant-match`
 dispatches. This is what lets chapter 7's effects rail turn a `cleared` fact
 into *bars over exactly those rows* without a second channel of information.
 
+Consuming payloads is the same match, read from the other side. Here is the
+conductor's per-event sound dispatch — every payload-bearing event gets its
+own arm, and the `else` stays silent because a fact with no sound is normal:
+
+```scheme
+(define (sfx-event! ev)
+  (variant-match ev
+    ((moved) (sfx! "move"))
+    ((rotated) (sfx! "rotate"))
+    ((dropped _) (sfx! "drop"))
+    ((locked _) (sfx! "lock"))
+    ((hold-swapped) (sfx! "hold"))
+    ((hold-refused) (sfx! "denied"))
+    (else #f)))
+```
+
+Note the `_` in `((dropped _)` and `((locked _)`: the pattern binds the
+payload to a name you decline to use. Compare with `((dropped d) ...)` in the
+award table, where the distance *is* the data a rule needs. The match tells
+the reader which facts carry information this consumer cares about.
+
+## 2.3b A second vocabulary, same shape
+
+The modes are a variant too (`scheme/domain/modes.scm`), and the record each
+case configures is a plain `define-record-type`:
+
+```scheme
+;; The closed four. Every dispatch on a mode anywhere in the program is a
+;; variant-match over exactly these; a fifth way to play is a diff here
+;; and nothing else.
+(define-variant mode (marathon) (sprint) (ultra) (cheese))
+
+(define-record-type mode-config
+  (make-mode-config mode starting-level target-lines time-limit cheese-rows)
+  mode-config?
+  (mode config-mode)
+  (starting-level config-starting-level)
+  ...)
+```
+
+The division of labor is worth stating: the *variant* is the closed set of
+alternatives the program branches on; the *record* is the data each
+alternative configures. A new mode means one new variant case, one constructor
+call, and one arm in `victory?` — the variant guarantees you find every
+dispatch that must learn about it.
+
 ## 2.4 The vocabulary IS the design document
 
 Read only the declarations and you know the whole game:
@@ -116,6 +162,37 @@ Two details worth stealing:
   encoding it in a boolean someone will flip by accident.
 - **Refusals are a variant, not an exception** (chapter 3): a wall is not an
   error, it is *the game saying no*, and the caller matches on the reason.
+
+Vocabularies also *compose* into gates. The single most-used phase question
+in the game is not one of the five — it is a composite:
+
+```scheme
+;; A match that is still going: the gate every live-match transition
+;; shares. A won or over match is a result to read, not a world to steer.
+(define (phase-live? s)
+  (variant-match (game-phase s)
+    ...))
+```
+
+Every transition's first arrow (`falling`, in chapter 3) asks this one
+question instead of re-enumerating the phases it *rejects*. Closed sets make
+negative questions cheap: "is this anything that is not finished" is one
+predicate, not a list of exceptions that grows every time you add a phase.
+
+And the smallest vocabulary in the game is just a list, guarded by `memq` —
+closedness does not always need machinery:
+
+```scheme
+;; The closed seven, in bag order.
+(define piece-names '(i o t s z j l))
+
+(define (piece-name? v)
+  (and (symbol? v) (memq v piece-names) #t))
+```
+
+`(tetris geometry)` refuses a made-up piece name with this three-line
+predicate; a variant would be overkill for a set that is never dispatched on,
+only membership-tested.
 
 ## 2.5 When *not* to use a variant
 

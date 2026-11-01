@@ -70,6 +70,30 @@ The same shape for the mode name itself:
 The condition is a plain **list** — message first, irritants after. It is not
 an error object with a stack trace; it is data the catcher renders.
 
+### A typo, traced
+
+The full path is short enough to walk. The menu's level picker is off by one
+keystroke and asks for mode `'sprintt`:
+
+1. `start-match!` calls `fresh-game` with `mode: 'sprintt`, which calls
+   `config-from`, which calls `mode-from-name`.
+2. `mode-from-name`'s `case` has no `sprintt` arm → `unknown-mode-error` →
+   the condition is raised: `("unknown mode" sprintt "try one of: marathon,
+   sprint, ultra, cheese")`.
+3. The raise unwinds — *nothing* has been built: no bag shuffled, no board
+   allocated, no `*screen*` moved.
+4. The `guard` in `start-match!` catches it, sets `*screen*` back to
+   `'title`, and prints:
+
+   ```
+   match refused: unknown mode sprintt try one of: marathon, sprint, ultra, cheese
+   ```
+
+Every fact the player needs to recover is in that one line, and every fact in
+it was supplied by the *raiser*, not the catcher. That is the division of
+labor: the domain knows what the valid set is; the edge only knows how to
+render.
+
 ## 4.2 The conductor catches, one frame away
 
 The raise happens deep in the domain; the catch happens exactly where the
@@ -128,6 +152,36 @@ Compare with the reflex this replaces: `(or (lookup id) default)`. A default
 converts a typo into a silently wrong game. The raise converts it into a
 sentence. **Silent defaults are how content rots** — the campaign that
 quietly skips a level nobody can explain.
+
+### The table behind the checks
+
+The bounds themselves are data — an alist of option name to its sane range —
+and the setter is a `case` that answers *closures*:
+
+```scheme
+;; The knobs a menu may set, with their sane ranges. A *presentation*
+;; guard, not a rule: the domain decides what a level means, but a menu
+;; should not be able to ask for level 0 or 4000 rows of garbage.
+(define option-limits
+  '((starting-level  (1 999))
+    (target-lines    (1 999))
+    (time-limit      (1 9999))
+    (cheese-rows     (0 20))))
+
+(define (option-setter k)
+  (case k
+    ((starting-level) (lambda (c v) (config-with c starting-level: v)))
+    ((target-lines)   (lambda (c v) (config-with c target-lines: v)))
+    ...))
+```
+
+Read `option-setter` as a table of one-argument constructors: given the name,
+answer the function that applies that option to a config. `checked-option`
+then composes the three concerns — known name, sane type, sane range — and
+only on success calls the setter. The interesting property is that adding an
+option touches **three lines in two tables** (`option-limits`,
+`option-setter`) and zero conditionals elsewhere; the check and the message
+are generated from the same data the setter reads.
 
 ## 4.4 Conditions vs. refusals vs. errors
 

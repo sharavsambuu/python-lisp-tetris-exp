@@ -165,7 +165,10 @@
              (s1 (with-event
                   (game-with state board: b* active: #f can-hold: #t)
                   (locked (falling-name p)))))
-        (let-values (((b2 n) (board-clear (game-board s1))))
+        ;; The rows go into the journal *as rows* — the edge's animation
+        ;; paints where they were, so the fact must say where, not how many.
+        (let* ((rows (full-rows (game-board s1))))
+          (let-values (((b2 n) (board-clear (game-board s1))))
           (let ((s2 (game-with s1 board: b2)))
             (if (= n 0)
                 (ok (game-with s2 combo: 0))
@@ -191,7 +194,7 @@
                        (if (> level* (game-level s2))
                            (with-event s3 (level-up level*))
                            s3)
-                       (list (cleared n) (scored points))))))))))
+                       (list (cleared rows) (scored points)))))))))))
 
     ;; Draw the next piece. The one way a game ends: a spawn that does not
     ;; fit. That is not a refusal — it is the over phase, announced in the

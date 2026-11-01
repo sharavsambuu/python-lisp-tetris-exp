@@ -65,6 +65,8 @@ KEY_NAMES = {
     pygame.K_p: "p",
     pygame.K_r: "r",
     pygame.K_q: "q",
+    pygame.K_LSHIFT: "shift",
+    pygame.K_RSHIFT: "shift",
     pygame.K_RETURN: "return",
     pygame.K_KP_ENTER: "return",
     pygame.K_ESCAPE: "escape",

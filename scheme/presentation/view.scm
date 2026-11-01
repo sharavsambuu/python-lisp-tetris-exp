@@ -76,6 +76,15 @@
     (define *flash-rgb* #f)
     (define *flash-ms* 0)
 
+    ;; The animation rail's own state: the score ticker's displayed value,
+    ;; the line-clear beam (which rows, how long), the hold panel's swap
+    ;; pulse, and the clock the danger pulse breathes on.
+    (define *score-shown* 0)
+    (define *beam-rows* '())
+    (define *beam-ms* 0)
+    (define *hold-pulse-ms* 0)
+    (define *fx-t* 0.0)
+
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
 
@@ -83,11 +92,67 @@
       (set! *flash-rgb* rgb)
       (set! *flash-ms* (max *flash-ms* ms)))
 
-    (define (view-fx-step! dt)
+    ;; The conductor awards a clear: the beam paints the cleared rows for as
+    ;; long as the flash burns — one flash length per line, so a tetris's
+    ;; bars outlast a single's.
+    (define (view-clear-beam! rows)
+      (set! *beam-rows* rows)
+      (set! *beam-ms* (+ 120 (* 40 (length rows)))))
+
+    (define (view-hold-pulse!)
+      (set! *hold-pulse-ms* 150))
+
+    ;; Mix two rgb lists: t=0 answers a, t=1 answers b, between — a blend.
+    (define (mix-rgb a b t)
+      (srfi-1:map (lambda (x y)
+                    (exact (round (+ (* x (- 1 t)) (* y t)))))
+                  a b))
+
+    ;; The stack's top row — matrix-height (an empty well) is the ceiling.
+    (define (stack-top st)
+      (let loop ((cells (board-cells (game-board st))) (top matrix-height))
+        (if (null? cells)
+            top
+            (loop (cdr cells)
+                  (min top (cdr (car (car cells))))))))
+
+    ;; Danger: a live piece with the stack four rows from the ceiling. Purely
+    ;; presentational — the rules never read it.
+    (define (danger-tint? st)
+      (and (game-active st) (<= (stack-top st) 3)))
+
+    ;; True while the rail still owes frames: a flash burning, a beam or
+    ;; pulse decaying, the ticker short of the real score, or a danger pulse
+    ;; breathing. The conductor repaints while this answers true, so an
+    ;; animation finishes even though "nothing happened" in the match.
+    (define (view-busy? st)
+      (or (> *flash-ms* 0)
+          (> *beam-ms* 0)
+          (> *hold-pulse-ms* 0)
+          (not (= *score-shown* (game-score st)))
+          (danger-tint? st)))
+
+    (define (view-fx-step! dt st)
+      (set! *fx-t* (+ *fx-t* (/ dt 1000.0)))
       (set! *shake-px* (max 0.0 (* *shake-px* 0.85)))
       (if (and *flash-rgb* (> *flash-ms* 0))
           (set! *flash-ms* (max 0 (- *flash-ms* dt)))
-          (set! *flash-rgb* #f)))
+          (set! *flash-rgb* #f))
+      (if (> *beam-ms* 0)
+          (set! *beam-ms* (max 0 (- *beam-ms* dt)))
+          (set! *beam-rows* '()))
+      (if (> *hold-pulse-ms* 0)
+          (set! *hold-pulse-ms* (max 0 (- *hold-pulse-ms* dt)))
+          #f)
+      ;; The ticker chases the real score: an eighth of the gap per frame,
+      ;; at least one, so a small gain still visibly rolls.
+      (let ((target (game-score st)))
+        (cond ((> *score-shown* target) (set! *score-shown* target))
+              ((< *score-shown* target)
+               (set! *score-shown*
+                     (min target (+ *score-shown*
+                                    (max 1 (quotient (- target *score-shown*) 8))))))
+              (else #f))))
 
     (define (apply-fx!)
       (if (and *flash-rgb* (> *flash-ms* 0))
@@ -151,11 +216,15 @@
 
     (define (draw-hold! st)
       (draw-panel! (lay left-x:) "HOLD")
-      (if (game-hold st)
-          (draw-text! (+ (lay left-x:) 8) 76
-                      (symbol->string (game-hold st)) 26
-                      (piece-color (game-hold st)))
-          (draw-text! (+ (lay left-x:) 8) 76 "-" 26 (color dim:))))
+      ;; A swap lights the panel's label up, then the pulse decays — the
+      ;; player's eye lands where the state changed.
+      (let ((t (min 1.0 (/ *hold-pulse-ms* 150))))
+        (if (game-hold st)
+            (draw-text! (+ (lay left-x:) 8) 76
+                        (symbol->string (game-hold st)) 26
+                        (mix-rgb (piece-color (game-hold st))
+                                 (color accent:) t))
+            (draw-text! (+ (lay left-x:) 8) 76 "-" 26 (color dim:)))))
 
     (define (draw-next! st)
       (draw-panel! (lay right-x:) "NEXT")
@@ -173,7 +242,10 @@
             (cfg (game-config st)))
         (draw-text! x 268 (mode-label cfg) 18 (color accent:))
         (draw-text! x 300 "SCORE" 18 (color dim:))
-        (draw-text! x 324 (number->string (game-score st)) 28 (color text:))
+        ;; The ticker's value, not the record's — a big clear rolls up
+        ;; instead of snapping, and the busy flag keeps frames coming
+        ;; until it lands.
+        (draw-text! x 324 (number->string *score-shown*) 28 (color text:))
         (draw-text! x 372 "LINES" 18 (color dim:))
         (draw-text! x 396 (number->string (game-lines st)) 28 (color text:))
         (draw-text! x 444 "LEVEL" 18 (color dim:))
@@ -269,7 +341,25 @@
 
     (define (draw-playing-field! st)
       (draw-well!)
+      ;; Danger breathes on the frame: a stack four rows from the ceiling
+      ;; pulses the well's border toward warn, faster as the end nears.
+      (if (danger-tint? st)
+          (draw-frame! (- (lay board-x:) 2) (- (lay board-y:) 2)
+                       (+ (* matrix-width (lay cell:)) 3)
+                       (+ (* matrix-height (lay cell:)) 3)
+                       (mix-rgb (color frame:) (color warn:)
+                                (* 0.5 (+ 1.0 (sin (* 8 *fx-t*))))))
+          #f)
       (draw-board! st)
+      ;; The clear beam: bright bars across the rows the last clear took —
+      ;; they decay with the flash, so a tetris burns longer than a single.
+      (if (and (> *beam-ms* 0) (not (null? *beam-rows*)))
+          (let ((w (* matrix-width (lay cell:))))
+            (for-each (lambda (r)
+                        (draw-rect! (lay board-x:) (py r)
+                                    (- w 1) (cell-size) '(235 245 255)))
+                      *beam-rows*))
+          #f)
       (if (game-active st)
           (begin
             (if *show-ghost* (draw-ghost! st) #f)

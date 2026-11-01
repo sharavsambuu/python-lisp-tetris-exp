@@ -171,13 +171,19 @@
       (for-each
        (lambda (ev)
          (variant-match ev
-           ((cleared n)
-            (let ((rgb (or (cdr (assq n *clear-palette*)) '(200 200 210))))
+           ((cleared rows)
+            (let ((rgb (or (cdr (assq (length rows) *clear-palette*)) '(200 200 210))))
               (view-flash! rgb (+ *clear-flash-base-ms*
-                                  (* n *clear-flash-per-line-ms*)))
-              (fx-thud! (min 2.0 (* n 0.5)))))
+                                  (* (length rows) *clear-flash-per-line-ms*)))
+              (fx-thud! (min 2.0 (* (length rows) 0.5)))
+              ;; The beam: bars across the rows the clear took, burning as
+              ;; long as the flash — the animation that reads "these rows
+              ;; just left".
+              (view-clear-beam! rows)))
            ((dropped d)
             (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
+           ((hold-swapped) (view-hold-pulse!))
+           ((hold-refused) (fx-thud! 1.0))
            ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
            ((victory) (view-flash! '(230 230 240) 220))
            ((game-over) (view-flash! '(160 40 40) 260))
@@ -686,22 +692,28 @@
 
     ;; One frame of holding. `timer` counts ms since the key went down:
     ;; below the delay it is quiet; above, it fires the held key's command
-    ;; once per rate and keeps the remainder.
+    ;; once per rate and keeps the remainder. Soft drop is tuned apart from
+    ;; steering: it answers the instant it is pressed (no delay) and repeats
+    ;; on its own faster rate — a held down-key should feel like falling,
+    ;; not like steering.
     (define (repeat-step st held timer dt)
       (if (or (not held) (not (phase-playing? st)))
           (values st timer #f)
-          (let ((timer* (+ timer dt)))
-            (cond ((< timer* (das-delay))
+          (let* ((down? (string=? held "down"))
+                 (delay (if down? 0 (das-delay)))
+                 (rate (if down? (soft-rate) (das-rate)))
+                 (timer* (+ timer dt)))
+            (cond ((< timer* delay)
                    (values st timer* #f))
                   (else
-                   (let* ((due (- timer* (das-delay)))
-                          (fires (quotient due (das-rate))))
+                   (let* ((due (- timer* delay))
+                          (fires (quotient due rate)))
                      (if (> fires 0)
                          (let* ((cmd (key->command held))
                                 (r (apply-command st cmd))
                                 (st* (if (result-ok? r) (ok-value r) st)))
                            (values st*
-                                   (- timer* (* fires (das-rate)))
+                                   (- timer* (* fires rate))
                                    #t))
                          (values st timer* #f))))))))
 
@@ -731,8 +743,9 @@
             (set! *st* st**)
             (let-values (((st*** time-moved) (step-time-v *st* dt)))
               (set! *st* st***)
-              (view-fx-step! dt)
+              (view-fx-step! dt *st*)
               (let* ((anything (or *dirty* repeated time-moved
+                                   (view-busy? *st*)
                                    (not (null? (game-journal *st*)))))
                      (st**** (if anything
                                  (begin
@@ -757,7 +770,7 @@
     (define (result-step!)
       (let ((dt (tick!))
             (evs (poll-events!)))
-        (view-fx-step! dt)
+        (view-fx-step! dt *st*)
         (let loop ((rest evs))
           (if (null? rest)
               #f
@@ -768,7 +781,7 @@
                    (play-key! (cadr (assq key: (car rest)))))
                   (else #f))
                 (loop (cdr rest)))))
-        (if (or *dirty* (not (null? (game-journal *st*))))
+        (if (or *dirty* (view-busy? *st*) (not (null? (game-journal *st*))))
             (begin
               (draw-game! *st*)
               (drain-journal! *st*)
@@ -858,7 +871,7 @@
     (define (menu-step!)
       (let ((dt (tick!))
             (evs (poll-events!)))
-        (view-fx-step! dt)
+        (view-fx-step! dt *st*)
         (let loop ((rest evs))
           (if (null? rest)
               #f

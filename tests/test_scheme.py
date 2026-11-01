@@ -11,7 +11,8 @@ from lisp import load_lisp, make_env
 # The domain tests steer a whole sprint match through the one-ply planner —
 # hundreds of thousands of interpreter steps in one top-level form. The
 # default 5M-step budget is a hang detector for production runs; a test that
-# *is* a long computation asks for more.
+# *is* a long computation asks for more. The set lives in a fixture, not at
+# module scope, so another suite's cleanup can never shrink it.
 lisp.evaluator.STEPS_BUDGET = 50_000_000
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,7 @@ TESTS = ROOT / "tests" / "scm"
 
 
 def _load(name, extra_paths=()):
+    lisp.evaluator.STEPS_BUDGET = 50_000_000
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
     assert env is not None

@@ -29,9 +29,12 @@
         (values (- owed (* ticks interval)) ticks)))
 
     ;; Input-repeat policy, in milliseconds: how long a held key waits before
-    ;; it starts repeating, and how fast it repeats after that. Soft drop
-    ;; repeats faster than steering.
-    (define* (das-delay (ms: ms 170)) ms)
-    (define* (das-rate (ms: ms 45)) ms)
-    (define* (soft-rate (ms: ms 40)) ms))
+    ;; it starts repeating, and how fast it repeats after that. Steering is
+    ;; tuned for a modern feel — a short delay (140ms) and a fast ARR (30ms,
+    ;; two cells a frame at 60fps once it fires). Soft drop is its own animal:
+    ;; it should answer the instant it is pressed and crawl faster than
+    ;; gravity, so the conductor gives it zero delay and this rate.
+    (define* (das-delay (ms: ms 140)) ms)
+    (define* (das-rate (ms: ms 30)) ms)
+    (define* (soft-rate (ms: ms 25)) ms))
 )

@@ -89,26 +89,55 @@
             (falling-x (game-active *st*)) (- x0 1)))
 
 ;; Holding left, from a fresh match so the repeat clock starts at zero.
-;; The press frame fires one move and starts the clock; the delay is 170ms
-;; and the rate 45ms. So: 13 frames (208ms) — one move, nothing more —
-;; then 7 more frames (320ms on the clock) — the first repeat fires. That
-;; is the whole DAS contract, and it holds no matter which piece spawned
-;; (a wall would clamp a naive "n columns" claim).
+;; The press frame fires one move and starts the clock; the delay is 140ms
+;; and the rate 30ms. So: 8 frames (128ms) — one move, nothing more — then
+;; 4 more frames (192ms on the clock) — the first repeat fires. That is the
+;; whole DAS contract, and it holds no matter which piece spawned (a wall
+;; would clamp a naive "n columns" claim).
 (boot-into! 'marathon '())
 (let* ((x0 (falling-x (game-active *st*))))
   (host-press! "left")            ; the press is this frame's event
-  (host-clock! 16 13)             ; 13 frames = 208ms, inside the delay
-  (host-run-frames! 13)
+  (host-clock! 16 8)              ; 8 frames = 128ms, inside the delay
+  (host-run-frames! 8)
   (let ((held-x (falling-x (game-active *st*))))
     (tk-check "the press moved one column, and no repeat has fired"
               (- x0 held-x) 1)
-    (host-clock! 16 7)            ; 7 more frames = 320ms on the clock
-    (host-run-frames! 7)
+    (host-clock! 16 4)            ; 4 more frames = 192ms on the clock
+    (host-run-frames! 4)
     (tk-check "past the delay, the repeat fires"
               (< (falling-x (game-active *st*)) held-x) #t)
     (host-release! "left")
     (host-run-frames! 1)          ; the release takes its own frame
     (tk-assert "the piece is still on the board" (game-active *st*))))
+
+;; Soft drop is tuned apart from steering: no delay at all, and its own
+;; faster rate (25ms). Six frames are 96ms — far inside the *steering*
+;; delay, so a held down-key proves its own policy by falling several rows
+;; where gravity (900ms a row at level 1) and steering DAS would fall none.
+(boot-into! 'marathon '())
+(let* ((y0 (falling-y (game-active *st*))))
+  (host-press! "down")
+  (host-clock! 16 6)              ; the press frame + 5 repeat frames
+  (host-run-frames! 6)
+  (let ((moved (- (falling-y (game-active *st*)) y0)))
+    (tk-assert "soft drop answered at once and kept falling" (>= moved 3))
+    (tk-assert "soft drop did not teleport" (<= moved 5))
+    (host-release! "down")
+    (host-run-frames! 1)))
+
+;; Shift swaps: the held piece takes the piece's place and a new piece
+;; spawns; a second shift is refused (one swap per piece) and changes
+;; nothing.
+(boot-into! 'marathon '())
+(let* ((first (falling-name (game-active *st*))))
+  (host-type! "shift")
+  (host-run-frames! 1)
+  (tk-check "the swap kept the piece" (game-hold *st*) first)
+  (tk-assert "a fresh piece spawned" (game-active *st*))
+  (tk-assert "the swap is spent" (not (game-can-hold *st*)))
+  (host-type! "shift")
+  (host-run-frames! 1)
+  (tk-check "the second shift was refused" (game-hold *st*) first))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  a scoring chain — a crafted double, applied through the pipeline         ;;

@@ -60,6 +60,7 @@
         ("x" (rotate-cw))
         ("z" (rotate-ccw))
         ("space" (hard-drop))
+        ("shift" (hold-piece))
         ("c" (hold-piece))
         ("r" (restart))
         (,_ #f)))
@@ -67,14 +68,15 @@
     ;; The inverse map, for the controls hint on the play screen: each row is
     ;; (key label). The *screen* keys (menu navigation, the AI and ghost
     ;; toggles) are the conductor's vocabulary, but a control table is one
-    ;; table, wherever the keys are dispatched.
+    ;; table, wherever the keys are dispatched. Shift swaps — either shift,
+    ;; the thumb-side key most swap-hands reach — and c stays for habit.
     (define command->key
       '(("left/right" "move")
         ("down" "soft drop")
         ("up / x" "rotate cw")
         ("z" "rotate ccw")
         ("space" "hard drop")
-        ("c" "hold")
+        ("shift / c" "hold")
         ("p" "pause")
         ("a" "AI on/off")
         ("g" "ghost on/off")

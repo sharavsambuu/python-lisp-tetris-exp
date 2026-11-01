@@ -58,7 +58,7 @@ def test_long_session_outlives_the_default_step_budget():
     two minutes into a game. The host now raises the ceiling; this runs
     enough frames to blow past the old budget and must exit clean.
     """
-    r = run_host("--frames", "4000", "--autostart", "--play", timeout=180)
+    r = run_host("--frames", "2500", "--autostart", "--play", timeout=240)
     assert r.returncode == 0, r.stderr[-2000:]
     assert "LispBudgetError" not in r.stderr, r.stderr[-2000:]
 

@@ -49,6 +49,7 @@ K_KEY = intern_keyword("key")
 T_QUIT = intern("quit")
 T_KEY_DOWN = intern("key-down")
 T_KEY_UP = intern("key-up")
+T_KEY_REPEAT = intern("key-repeat")
 
 #: Keycode -> the name the Scheme side sees. Lowercase words, one spelling
 #: each; the keymap in ``scheme/rules/commands.scm`` owns the mapping the
@@ -74,6 +75,16 @@ KEY_NAMES = {
 
 #: Held keys the DAS policy may care about — the same spelling as KEY_NAMES.
 HELD_KEYS = ("left", "right", "down")
+
+#: The held-key repeat pump — the same cadence the reference edge uses:
+#: how long a hold waits before its first repeat, and how fast it repeats
+#: after that. The pump lives here, in the edge, NOT in the game: KEYDOWN
+#: starts a key's countdown, KEYUP removes it, and every frame the pump
+#: fires ``key-repeat`` events for the keys that are due — exactly periodic
+#: in time, immune to frame jitter, and immune to the stale-credit bug a
+#: hand-threaded game timer grows.
+REPEAT_DELAY_MS = 150
+REPEAT_INTERVAL_MS = 40
 
 #: name -> keycode, for the scripted-input mode (``--play``): a tiny bot that
 #: lives at the edge and types at the game so a headless smoke test crosses
@@ -128,6 +139,11 @@ class PygameHost:
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
+        # The repeat pump's state: keycode -> ms until that key's next
+        # repeat (KEYDOWN seeds it with the DAS delay). Plus the last
+        # frame's dt, which feeds the pump.
+        self._held: dict[int, float] = {}
+        self._last_dt = 16.0
         # Font and rendered-text caches: a painted frame draws ~20 strings,
         # and building a freetype Font per call costs real milliseconds —
         # the difference between a 16ms frame and a 40ms one, which the
@@ -172,12 +188,14 @@ class PygameHost:
         """One frame: hold ~60 fps, answer the elapsed milliseconds."""
         dt = self.clock.tick(60)
         # A hitch (GC, OS, a slow first frame) must not hand the conductor a
-        # giant dt: gravity would leap rows and the repeat policy would land
+        # giant dt: gravity would leap rows and the repeat pump would land
         # a burst of moves in one frame — the player sees a skip. The clock
         # is capped at four frames' worth; the loop is already behind, and
         # catch-up beyond that reads as a stutter, not as time.
+        dt = int(min(dt, 66))
+        self._last_dt = float(dt)
         self._frames += 1
-        return int(min(dt, 66))
+        return dt
 
     def poll_events(self) -> list:
         """The frame's events, as alists the Scheme side can fold over.
@@ -186,6 +204,13 @@ class PygameHost:
         keyword objects (so ``assq`` matches them), the kinds are symbols the
         conductor ``case``s on, and key names are strings the keymap matches.
         No events is the *Scheme* empty list, so ``(null? evs)`` is honest.
+
+        This is also where held keys repeat: KEYDOWN starts a key's DAS
+        countdown, KEYUP removes it, and every poll fires ``key-repeat``
+        events for the keys that came due since the last frame — the same
+        pump the reference edge runs. The pump is fed this frame's clamped
+        dt, so repeats are exactly periodic in time no matter how the frame
+        rate wobbles, and the game never tracks held state itself.
         """
         from lisp.types import NIL
 
@@ -200,10 +225,25 @@ class PygameHost:
                 name = KEY_NAMES.get(raw.key)
                 if name is not None:
                     events.append([[K_TYPE, T_KEY_DOWN], [K_KEY, name]])
+                    if not getattr(raw, "repeat", False):  # SDL's own repeat is not ours
+                        self._held[raw.key] = REPEAT_DELAY_MS
             elif raw.type == pygame.KEYUP:
                 name = KEY_NAMES.get(raw.key)
                 if name is not None:
                     events.append([[K_TYPE, T_KEY_UP], [K_KEY, name]])
+                self._held.pop(raw.key, None)
+            elif raw.type == pygame.WINDOWFOCUSLOST:
+                self._held.clear()  # alt-tab must not pump ghosts
+        # The pump: every held key counts down by this frame's dt, and each
+        # time one lands at zero it fires a repeat and re-arms.
+        dt = self._last_dt
+        for key, remaining in list(self._held.items()):
+            remaining -= dt
+            name = KEY_NAMES.get(key)
+            while remaining <= 0 and name:
+                events.append([[K_TYPE, T_KEY_REPEAT], [K_KEY, name]])
+                remaining += REPEAT_INTERVAL_MS
+            self._held[key] = remaining
         if self.play_script and self._frames % 12 == 0:
             # The bot taps a key from the whole vocabulary, cycling — enough
             # to steer, rotate, drop, and hold its way around.

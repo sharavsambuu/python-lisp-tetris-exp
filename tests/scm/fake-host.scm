@@ -25,6 +25,9 @@
 (define *host-events* '())     ; queued event alists, oldest first
 (define *host-ticks* '())      ; queued dt values, oldest first
 (define *host-held* '())       ; ((name . #t) ...) — the bot's key state
+(define *host-held-clock* '()) ; ((name . ms-remaining) ...) — the repeat pump
+(define *host-das* 150)        ; the pump's cadence — the reference edge's
+(define *host-arr* 40)
 (define *host-quit?* #f)
 (define *host-window* #f)      ; (w h) once opened
 (define *host-boot-config* '())
@@ -36,6 +39,7 @@
   (set! *host-events* '())
   (set! *host-ticks* '())
   (set! *host-held* '())
+  (set! *host-held-clock* '())
   (set! *host-quit?* #f)
   (set! *host-window* #f)
   (set! *host-boot-config* '())
@@ -73,11 +77,34 @@
 (define (tint! rgb) (host-log! 'tint rgb))
 
 (define (tick!)
-  (if (null? *host-ticks*)
-      16
-      (let ((dt (car *host-ticks*)))
-        (set! *host-ticks* (cdr *host-ticks*))
-        dt)))
+  (let ((dt (if (null? *host-ticks*)
+                16
+                (let ((dt (car *host-ticks*)))
+                  (set! *host-ticks* (cdr *host-ticks*))
+                  dt))))
+    ;; The same clamp the real host runs: a fat test clock must not bill a
+    ;; 1000ms frame to the repeat pump — it would fire a burst of catch-up
+    ;; repeats that floods the queue ahead of real presses.
+    (set! dt (min dt 66))
+    ;; The repeat pump: every held key's countdown burns this frame's dt,
+    ;; and each one that lands at zero queues a ``key-repeat`` event and
+    ;; re-arms — the same pump pygame_host.py runs, so the tests exercise
+    ;; the real input shape end to end.
+    (set! *host-held-clock*
+          (srfi-1:map
+           (lambda (entry)
+             (let* ((name (car entry))
+                    (remaining (- (cdr entry) dt)))
+               (if (<= remaining 0)
+                   (begin
+                     (set! *host-events*
+                           (append *host-events*
+                                   (list (list (list type: 'key-repeat)
+                                               (list key: name)))))
+                     (cons name (+ remaining *host-arr*)))
+                   (cons name remaining))))
+           *host-held-clock*))
+    dt))
 
 (define (poll-events!)
   (if (null? *host-events*)
@@ -103,16 +130,24 @@
 ;;  Scripting the host                                                     ;;
 ;; --------------------------------------------------------------------- ;;
 
-;; Queue one key-down: the alist shape the real host builds.
+;; Queue one key-down: the alist shape the real host builds. A press also
+;; seeds the repeat pump's countdown for that key — DAS starts at the press.
 (define (host-press! key)
   (set! *host-events*
         (append *host-events*
-                (list (list (list type: 'key-down) (list key: key))))))
+                (list (list (list type: 'key-down) (list key: key)))))
+  (set! *host-held-clock*
+        (cons (cons key *host-das*)
+              (filter (lambda (e) (not (string=? (car e) key)))
+                      *host-held-clock*))))
 
 (define (host-release! key)
   (set! *host-events*
         (append *host-events*
-                (list (list (list type: 'key-up) (list key: key))))))
+                (list (list (list type: 'key-up) (list key: key)))))
+  (set! *host-held-clock*
+        (filter (lambda (e) (not (string=? (car e) key)))
+                *host-held-clock*)))
 
 (define (host-queue-quit!)
   (set! *host-events*

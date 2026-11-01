@@ -253,7 +253,7 @@ def test_painter_paints():
 
     # A match is live and its frame paints the whole picture.
     assert run("(phase-playing? *st*)", env) is True
-    run("(play-frame *st* #f 0 #t)", env)
+    run("(play-frame *st* #t)", env)
     assert surf.get_at((5, 5))[:3] == (16, 16, 22), "background not painted"
     assert surf.get_at((188, 58))[:3] == (110, 110, 135), "well frame missing"
     assert surf.get_at((30, 60))[:3] == (32, 32, 44), "hold panel missing"

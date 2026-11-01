@@ -23,12 +23,14 @@
 ;;;
 ;;;   (start-match! challenge-or-config)
 ;;;
-;;; This file also owns the three edge policies the match record must not
-;;; know about: the input repeat (DAS/ARR), the speaker's routing table, and
-;;; the effects award table (what a clear or a slam is worth in flash and
-;;; shake). The AI lives here too — its pure arithmetic is ``(tetris plan)``,
-;;; its frame-budgeted search and its steering are edge code, because a
-;;; plan that costs frames is a scheduling decision.
+;;; This file also owns the two edge policies the match record must not
+;;; know about: the speaker's routing table, and the effects award table
+;;; (what a clear or a slam is worth in flash and shake). The AI lives here
+;;; too — its pure arithmetic is ``(tetris plan)``, its frame-budgeted
+;;; search and its steering are edge code, because a plan that costs frames
+;;; is a scheduling decision. Held-key repeat (DAS/ARR) is the HOST's
+;;; pump: it fires ``key-repeat`` events on its own clock, and this file
+;;; only decides which commands may repeat.
 ;;;
 ;;; Public names: arcade-main.
 
@@ -60,8 +62,6 @@
     (define *done* '())        ;; the campaign levels already won
     (define *ai* #f)           ;; does Lisp play? (A toggles)
     (define *st* (new-game))   ;; the live match, when there is one
-    (define *held* #f)         ;; the key the repeat policy is firing
-    (define *timer* 0)         ;; ms the held key has been down
     (define *dirty* #t)        ;; does the screen need paint?
 
     ;; How far up the level ladder *free play* offers. A design choice, not
@@ -172,7 +172,7 @@
        (lambda (ev)
          (variant-match ev
            ((cleared rows)
-            (let ((rgb (or (cdr (assq (length rows) *clear-palette*)) '(200 200 210))))
+            (let ((rgb (or (cadr (assq (length rows) *clear-palette*)) '(200 200 210))))
               (view-flash! rgb (+ *clear-flash-base-ms*
                                   (* (length rows) *clear-flash-per-line-ms*)))
               (fx-thud! (min 2.0 (* (length rows) 0.5)))
@@ -210,8 +210,6 @@
           (set! *challenge* challenge)
           (set! *playing-key* key)
           (set! *playing-index* index)
-          (set! *held* #f)
-          (set! *timer* 0)
           (set! *dirty* #t)
           (set! *settled* #f)
           (set! *screen* 'play)
@@ -626,19 +624,22 @@
     ;; then the repeat policy, then gravity, then the draw. A frame draws
     ;; only when something happened.
 
-    ;; The held-able keys, as data — the repeat policy's whole surface.
-    (define held-able '("left" "right" "down"))
+    ;; The keys a *held* key may repeat — one-shots (rotate, hard drop,
+    ;; hold, restart) stay one per physical press. The host pumps the
+    ;; repeats; this table is only the conductor's "which repeats mean
+    ;; anything" decision.
+    (define repeat-able '("left" "right" "down"))
 
     ;; One polled event against the live match. This runs ONLY while the
     ;; phase is playing — a paused or finished match is a *decision point*,
-    ;; and its keys go through `play-key!` instead. Answers two values: the
-    ;; state after the event, and the key now held (or #f).
-    (define (apply-event st ev held)
+    ;; and its keys go through `play-key!` instead. The state after the
+    ;; event is the answer; held-key state lives in the host.
+    (define (apply-event st ev)
       (let ((type (cadr (assq type: ev))))
         (case type
           ((quit)
            (quit!)
-           (values st held))
+           st)
           ((key-down)
            (let ((key (cadr (assq key: ev))))
              (cond
@@ -646,77 +647,79 @@
                ((string=? key "a")
                 (set! *ai* (not *ai*))
                 (reset-ai!)
-                (values st held))
+                st)
                ((string=? key "g")
                 (show-ghost! (not (show-ghost?)))
-                (values st held))
+                st)
                ;; Escape from a live match pauses rather than leaves — a
                ;; stray keypress should cost a keypress, not a game.
                ((string=? key "escape")
                 (sfx! "pause")
                 (set! *dirty* #t)   ; the veil must paint this frame
-                (values (game-with st phase: (paused)) #f))
+                (game-with st phase: (paused)))
                ((string=? key "p")
                 (sfx! "pause")
                 (set! *dirty* #t)   ; the veil must paint this frame
-                (values (game-with st phase: (paused)) #f))
+                (game-with st phase: (paused)))
                ((string=? key "q")
                 (quit!)
-                (values st held))
-               ;; A held-able key: apply its command now and start the
-               ;; repeat clock. (The clock itself restarts in `play-frame`,
-               ;; which owns the timer value.)
-               ((and (member key held-able))
-                (let ((r (apply-command st (key->command key))))
-                  (sfx-command! (key->command key))
-                  (values (if (result-ok? r) (ok-value r) st) key)))
-               ;; Everything else goes through the keymap, once.
+                st)
+               ;; Everything else goes through the keymap, once. A press
+               ;; fires its command and its blip.
                (else
                 (let ((cmd (key->command key)))
                   (if cmd
                       (let ((r (apply-command st cmd)))
                         (sfx-command! cmd)
-                        (values (if (result-ok? r) (ok-value r) st) held))
-                      (values st held)))))))
-          ((key-up)
+                        (if (result-ok? r) (ok-value r) st))
+                      st))))))
+          ((key-repeat)
+           ;; The host says a key is still down. Only the repeatable
+           ;; commands glide; one-shots ignore their repeats, and repeats
+           ;; are deliberately silent — 25 blips a second is a machine
+           ;; gun, not feedback.
            (let ((key (cadr (assq key: ev))))
-             ;; `held` may be #f (nothing held), so the comparison is
-             ;; equal?: a release of a different key leaves it alone.
-             (values st (if (equal? key held) #f held))))
-          (else (values st held)))))
+             (if (member key repeat-able)
+                 (let ((cmd (key->command key)))
+                   (if cmd
+                       (let ((r (apply-command st cmd)))
+                         (if (result-ok? r) (ok-value r) st))
+                       st))
+                 st)))
+          (else st))))
 
-    (define (apply-events st evs held)
+    (define (apply-events st evs)
       (if (null? evs)
-          (values st held)
-          (let-values (((st* held*) (apply-event st (car evs) held)))
-            (apply-events st* (cdr evs) held*))))
+          st
+          (apply-events (apply-event st (car evs)) (cdr evs))))
 
-    ;; One frame of holding. `timer` counts ms since the key went down:
-    ;; below the delay it is quiet; above, it fires the held key's command
-    ;; once per rate and keeps the remainder. Soft drop is tuned apart from
-    ;; steering: it answers the instant it is pressed (no delay) and repeats
-    ;; on its own faster rate — a held down-key should feel like falling,
-    ;; not like steering.
-    (define (repeat-step st held timer dt)
-      (if (or (not held) (not (phase-playing? st)))
-          (values st timer #f)
-          (let* ((down? (string=? held "down"))
-                 (delay (if down? 0 (das-delay)))
-                 (rate (if down? (soft-rate) (das-rate)))
-                 (timer* (+ timer dt)))
-            (cond ((< timer* delay)
-                   (values st timer* #f))
-                  (else
-                   (let* ((due (- timer* delay))
-                          (fires (quotient due rate)))
-                     (if (> fires 0)
-                         (let* ((cmd (key->command held))
-                                (r (apply-command st cmd))
-                                (st* (if (result-ok? r) (ok-value r) st)))
-                           (values st*
-                                   (- timer* (* fires rate))
-                                   #t))
-                         (values st timer* #f))))))))
+    ;; One frame of the live match. The order is the discipline: events
+    ;; first (a key press lands *before* the gravity of the frame it
+    ;; happened in) — and the state the events produced is SAVED, or the
+    ;; player's keys would land in a discarded world — then the AI's one
+    ;; step, then gravity, then the draw. A frame draws only when something
+    ;; happened. Held-key repeats arrived in this frame's events, pumped by
+    ;; the host on its own clock.
+    (define (play-frame st dirty)
+      (let* ((dt (tick!))
+             (evs (poll-events!)))
+        (set! *st* (apply-events st evs))
+        (ai-step!)
+        (let-values (((st* time-moved) (step-time-v *st* dt)))
+          (set! *st* st*)
+          (view-fx-step! dt *st*)
+          (let* ((anything (or *dirty* time-moved
+                               (view-busy? *st*)
+                               (not (null? (game-journal *st*))))))
+            ;; The drained state is the state: `drain-journal!` answers the
+            ;; record with the paper trail cleared, and losing that value
+            ;; would re-count every old fact on every frame — the journal
+            ;; must actually drain.
+            (if anything
+                (begin
+                  (draw-game! *st*)
+                  (set! *st* (drain-journal! *st*)))
+                #f)))))
 
     ;; step-time answers a Result; the loop lives below the railway, so this
     ;; little stair takes it down: state, plus whether time did anything.
@@ -726,40 +729,6 @@
             (values (ok-value r)
                     (not (null? (game-journal (ok-value r)))))
             (values st #f))))
-
-    ;; One frame of the live match. The order is the discipline: events
-    ;; first (a key press lands *before* the gravity of the frame it
-    ;; happened in) — and the state the events produced is SAVED, or the
-    ;; player's keys would land in a discarded world — then the AI's one
-    ;; step, then the repeat policy, then gravity, then the draw. A frame
-    ;; draws only when something happened.
-    (define (play-frame st held timer dirty)
-      (let* ((dt (tick!))
-             (evs (poll-events!)))
-        (let-values (((st* held*) (apply-events st evs held)))
-          (set! *st* st*)
-          ;; A changed held key is a new press (or a release): the repeat
-          ;; clock restarts. The previous hold's milliseconds are not this
-          ;; key's credit — without this, a re-press after a long hold
-          ;; repeats instantly and steering lurches instead of stepping.
-          (let ((timer (if (equal? held* held) timer 0)))
-            (ai-step!)
-            (let-values (((st** timer* repeated)
-                          (repeat-step *st* held* timer dt)))
-              (set! *st* st**)
-              (let-values (((st*** time-moved) (step-time-v *st* dt)))
-                (set! *st* st***)
-                (view-fx-step! dt *st*)
-                (let* ((anything (or *dirty* repeated time-moved
-                                     (view-busy? *st*)
-                                     (not (null? (game-journal *st*)))))
-                       (st**** (if anything
-                                   (begin
-                                     (draw-game! *st*)
-                                     (drain-journal! *st*))
-                                   *st*)))
-                  (set! *st* st****)
-                  (values held* timer*))))))))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The loop                                                           ;;
@@ -796,9 +765,8 @@
 
     (define (play-step!)
       (if (phase-playing? *st*)
-          (let-values (((held* timer*) (play-frame *st* *held* *timer* *dirty*)))
-            (set! *held* held*)
-            (set! *timer* timer*)
+          (begin
+            (play-frame *st* *dirty*)
             (set! *dirty* (quit-requested?))
             (if (or (phase-over? *st*) (phase-won? *st*))
                 (if *settled*

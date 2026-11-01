@@ -128,6 +128,14 @@ class PygameHost:
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
+        # Font and rendered-text caches: a painted frame draws ~20 strings,
+        # and building a freetype Font per call costs real milliseconds —
+        # the difference between a 16ms frame and a 40ms one, which the
+        # player feels as input lag and bursty DAS. Fonts are cached by
+        # size; rendered surfaces by (text, size, color), bounded so the
+        # ticker's ever-changing numbers cannot grow it without end.
+        self._fonts: dict[int, pygame.font.Font] = {}
+        self._text_cache: dict[tuple[str, int, tuple[int, int, int]], pygame.Surface] = {}
         self._init_pygame()
 
     # ------------------------------------------------------------------ #
@@ -163,8 +171,13 @@ class PygameHost:
     def tick(self) -> int:
         """One frame: hold ~60 fps, answer the elapsed milliseconds."""
         dt = self.clock.tick(60)
+        # A hitch (GC, OS, a slow first frame) must not hand the conductor a
+        # giant dt: gravity would leap rows and the repeat policy would land
+        # a burst of moves in one frame — the player sees a skip. The clock
+        # is capped at four frames' worth; the loop is already behind, and
+        # catch-up beyond that reads as a stutter, not as time.
         self._frames += 1
-        return int(dt)
+        return int(min(dt, 66))
 
     def poll_events(self) -> list:
         """The frame's events, as alists the Scheme side can fold over.
@@ -256,14 +269,29 @@ class PygameHost:
             width=2,
         )
 
+    def _font(self, size: int) -> pygame.font.Font:
+        """One Font per size, built once — never per call."""
+        size = int(size)
+        font = self._fonts.get(size)
+        if font is None:
+            font = pygame.font.Font(None, size)
+            self._fonts[size] = font
+        return font
+
     def draw_text(self, x, y, s, size, rgb) -> None:
-        font = pygame.font.Font(None, int(size))
-        surface = font.render(str(s), True, tuple(int(c) for c in rgb))
+        color = tuple(int(c) for c in rgb)
+        key = (str(s), int(size), color)
+        surface = self._text_cache.get(key)
+        if surface is None:
+            if len(self._text_cache) > 256:
+                self._text_cache.clear()  # the ticker's old numbers age out
+            surface = self._font(size).render(
+                str(s), True, color)
+            self._text_cache[key] = surface
         self._require_display().blit(surface, (int(x), int(y)))
 
     def text_width(self, s, size) -> int:
-        font = pygame.font.Font(None, int(size))
-        return font.size(str(s))[0]
+        return self._font(size).size(str(s))[0]
 
     def present(self) -> None:
         pygame.display.flip()

@@ -139,6 +139,31 @@
   (host-run-frames! 1)
   (tk-check "the second shift was refused" (game-hold *st*) first))
 
+;; A re-press starts a FRESH repeat clock. The stale milliseconds of the
+;; last hold must not buy instant repeats on the next press — before the
+;; fix, a second hold after 320ms of holding fired its repeats at once, and
+;; the piece lurched several cells. Steering right on the re-press (the
+;; piece sits at the left wall after the first hold, so one move is
+;; guaranteed): the press plus the whole 144ms delay window must move the
+;; piece exactly one column in total.
+(boot-into! 'marathon '())
+(let* ((x0 (falling-x (game-active *st*))))
+  (host-press! "left")
+  (host-clock! 16 20)             ; 320ms: delay burned, repeats flowing
+  (host-run-frames! 20)
+  (host-release! "left")
+  (host-run-frames! 1)
+  (tk-assert "the piece sits left of centre after the hold"
+             (< (falling-x (game-active *st*)) x0))
+  (let ((x1 (falling-x (game-active *st*))))   ; before the re-press lands
+    (host-press! "right")
+    (host-clock! 16 9)              ; the press frame + 8 frames = 144ms
+    (host-run-frames! 9)
+    (tk-check "a re-press moves exactly one column through the delay"
+              (- (falling-x (game-active *st*)) x1) 1)
+    (host-release! "right")
+    (host-run-frames! 1)))
+
 ;; --------------------------------------------------------------------- ;;
 ;;  a scoring chain — a crafted double, applied through the pipeline         ;;
 ;; --------------------------------------------------------------------- ;;

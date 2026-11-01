@@ -664,7 +664,8 @@
                 (quit!)
                 (values st held))
                ;; A held-able key: apply its command now and start the
-               ;; repeat clock.
+               ;; repeat clock. (The clock itself restarts in `play-frame`,
+               ;; which owns the timer value.)
                ((and (member key held-able))
                 (let ((r (apply-command st (key->command key))))
                   (sfx-command! (key->command key))
@@ -737,23 +738,28 @@
              (evs (poll-events!)))
         (let-values (((st* held*) (apply-events st evs held)))
           (set! *st* st*)
-          (ai-step!)
-          (let-values (((st** timer* repeated)
-                        (repeat-step *st* held* timer dt)))
-            (set! *st* st**)
-            (let-values (((st*** time-moved) (step-time-v *st* dt)))
-              (set! *st* st***)
-              (view-fx-step! dt *st*)
-              (let* ((anything (or *dirty* repeated time-moved
-                                   (view-busy? *st*)
-                                   (not (null? (game-journal *st*)))))
-                     (st**** (if anything
-                                 (begin
-                                   (draw-game! *st*)
-                                   (drain-journal! *st*))
-                                 *st*)))
-                (set! *st* st****)
-                (values held* timer*)))))))
+          ;; A changed held key is a new press (or a release): the repeat
+          ;; clock restarts. The previous hold's milliseconds are not this
+          ;; key's credit — without this, a re-press after a long hold
+          ;; repeats instantly and steering lurches instead of stepping.
+          (let ((timer (if (equal? held* held) timer 0)))
+            (ai-step!)
+            (let-values (((st** timer* repeated)
+                          (repeat-step *st* held* timer dt)))
+              (set! *st* st**)
+              (let-values (((st*** time-moved) (step-time-v *st* dt)))
+                (set! *st* st***)
+                (view-fx-step! dt *st*)
+                (let* ((anything (or *dirty* repeated time-moved
+                                     (view-busy? *st*)
+                                     (not (null? (game-journal *st*)))))
+                       (st**** (if anything
+                                   (begin
+                                     (draw-game! *st*)
+                                     (drain-journal! *st*))
+                                   *st*)))
+                  (set! *st* st****)
+                  (values held* timer*))))))))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The loop                                                           ;;

@@ -126,6 +126,18 @@
     (host-release! "down")
     (host-run-frames! 1)))
 
+;; Gravity is the clock's work, not a player's move: an idle match falls
+;; silent. Level 1 pulls a row every 900ms, so 1.92s of idle time is two
+;; rows — enough to prove the descent happened, and that it said nothing.
+(boot-into! 'marathon '())
+(let ((y0 (falling-y (game-active *st*))))
+  (host-clock! 16 120)            ; 120 frames = 1.92s: two level-1 ticks
+  (host-run-frames! 120)
+  (tk-assert "gravity did move the piece"
+             (> (falling-y (game-active *st*)) y0))
+  (tk-assert "an idle match is silent"
+             (not (member "move" (host-sfx-names)))))
+
 ;; Shift swaps: the held piece takes the piece's place and a new piece
 ;; spawns; a second shift is refused (one swap per piece) and changes
 ;; nothing.

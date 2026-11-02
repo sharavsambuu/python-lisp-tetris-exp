@@ -96,7 +96,9 @@ scheme/
   - **SRFI 89** — `define*` gives the game its difficulty surface
     (`(new-game seed: … mode: … options: …)`) and the config/gravity curves
     their knobs.
-  - **SRFI 197** — `chain` shapes the pixel pipelines in the view.
+  - **SRFI 197** — `chain` spells the view's one-shot pipelines (`centered-x`);
+    the per-cell pixel math is plain arithmetic, because a `chain` step pays
+    its expansion on every call (§12.5's scar).
   - **SRFI 241** — `match` with string and integer constant patterns reads
     the keymap and the award table as the tables they are (note the `,_`
     wildcard: bare symbols are constants in this SRFI).
@@ -107,14 +109,14 @@ scheme/
 python -m pytest tests/ -q
 ```
 
-Seven tests: the whole pure domain checked headlessly (`tests/scm/
-domain-tests.scm` — geometry invariants, board immutability, bag deals,
-mode configs and their named refusals, cheese seeding, per-mode victory,
-combo/b2b scoring, the plan arithmetic, campaign content and progress, a
-restart that keeps its recipe, a sprint match won through the one-ply
-planner, and the monad laws); the purity fence; and five headless runs of
-the real game — boot, a bot playing a match, the AI steering a sprint, both
-remaining modes booting, and a drawn screen read back pixel by pixel.
+The tests are Scheme: `tests/scm/` holds the suites (the pure domain, whole
+match playthroughs against a fake host implemented in Scheme, screen behavior
+asserted against a draw-call log, the shell's whole transition table), and
+`tests/scm/run-all.scm` orchestrates them all under one interpreter. Python
+is the bootstrap — it boots the DSL, sizes the step budget, and keeps a thin
+real-SDL layer (subprocess smoke runs, one pixel test). The full story,
+including where Python makes sense and which suite a new test belongs in,
+is in [`tests/README.md`](tests/README.md).
 
 # Layout of a frame
 

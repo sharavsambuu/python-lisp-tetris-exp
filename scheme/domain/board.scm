@@ -30,7 +30,12 @@
     (define (empty-row) (make-vector matrix-width #f))
 
     (define (make-board)
-      (make-vector matrix-height (empty-row)))
+      ;; Distinct rows on purpose: `make-vector`'s fill would alias ONE
+      ;; empty row across all twenty, and a future direct `vector-set!`
+      ;; would write through every row at once. Writes still go through
+      ;; `board-copy`, but the fresh value starts honest.
+      (vector-map (lambda (_) (empty-row))
+                  (make-vector matrix-height #f)))
 
     (define (board? v)
       (and (vector? v)

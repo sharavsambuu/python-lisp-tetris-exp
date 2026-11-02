@@ -14,7 +14,7 @@
 ;;; The conductor draws only when something happened (the dirty flag), so the
 ;;; cost of a quiet frame is a few comparisons, not two hundred rectangles.
 ;;;
-;;; Public names: window-width, window-height, draw-game!.
+;;; Public names: window-width, window-height, draw-game!, view-reset!.
 
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
@@ -78,12 +78,15 @@
 
     ;; The animation rail's own state: the score ticker's displayed value,
     ;; the line-clear beam (which rows, how long), the hold panel's swap
-    ;; pulse, and the clock the danger pulse breathes on.
+    ;; pulse, the clock the danger pulse breathes on — and the danger
+    ;; repaint gate: the pulse is a slow sine, so the frames it costs are
+    ;; spent at ~15 fps, not once per frame of the match.
     (define *score-shown* 0)
     (define *beam-rows* '())
     (define *beam-ms* 0)
     (define *hold-pulse-ms* 0)
     (define *fx-t* 0.0)
+    (define *danger-paint-ms* 0)
 
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
@@ -102,6 +105,21 @@
     (define (view-hold-pulse!)
       (set! *hold-pulse-ms* 150))
 
+    ;; A new screen is a clean slate: effects belong to the match that
+    ;; earned them. Without this reset, a clear's beam outlived its match
+    ;; and painted itself over the next board, and a flash burned through
+    ;; the menu that came after. Called when a match starts and when the
+    ;; shell shows a menu screen.
+    (define (view-reset!)
+      (set! *shake-px* 0.0)
+      (set! *flash-rgb* #f)
+      (set! *flash-ms* 0)
+      (set! *score-shown* 0)
+      (set! *beam-rows* '())
+      (set! *beam-ms* 0)
+      (set! *hold-pulse-ms* 0)
+      (set! *danger-paint-ms* 0))
+
     ;; Mix two rgb lists: t=0 answers a, t=1 answers b, between — a blend.
     (define (mix-rgb a b t)
       (srfi-1:map (lambda (x y)
@@ -109,12 +127,18 @@
                   a b))
 
     ;; The stack's top row — matrix-height (an empty well) is the ceiling.
+    ;; A direct scan with an early exit, not a flatten-and-fold: this runs
+    ;; every frame inside `view-busy?`, and building a full board's cell
+    ;; list to learn what the first row already knew cost ~12ms a call.
     (define (stack-top st)
-      (let loop ((cells (board-cells (game-board st))) (top matrix-height))
-        (if (null? cells)
-            top
-            (loop (cdr cells)
-                  (min top (cdr (car (car cells))))))))
+      (let ((b (game-board st)))
+        (let loop-y ((y 0))
+          (if (>= y matrix-height)
+              matrix-height
+              (let loop-x ((x 0))
+                (cond ((>= x matrix-width) (loop-y (+ y 1)))
+                      ((board-ref b x y) y)
+                      (else (loop-x (+ x 1)))))))))
 
     ;; Danger: a live piece with the stack four rows from the ceiling. Purely
     ;; presentational — the rules never read it.
@@ -122,19 +146,24 @@
       (and (game-active st) (<= (stack-top st) 3)))
 
     ;; True while the rail still owes frames: a flash burning, a beam or
-    ;; pulse decaying, the ticker short of the real score, or a danger pulse
-    ;; breathing. The conductor repaints while this answers true, so an
-    ;; animation finishes even though "nothing happened" in the match.
+    ;; pulse decaying, the ticker short of the real score, or a danger
+    ;; pulse whose paint gate has expired. The conductor repaints while
+    ;; this answers true, so an animation finishes even though "nothing
+    ;; happened" in the match. The danger arm is gated: a full repaint
+    ;; every frame just to breathe a border cost more than the match
+    ;; itself on a full board — the gate buys it back at ~15 fps, and
+    ;; `draw-playing-field!` re-arms the gate when it paints.
     (define (view-busy? st)
       (or (> *flash-ms* 0)
           (> *beam-ms* 0)
           (> *hold-pulse-ms* 0)
           (not (= *score-shown* (game-score st)))
-          (danger-tint? st)))
+          (and (danger-tint? st) (<= *danger-paint-ms* 0))))
 
     (define (view-fx-step! dt st)
       (set! *fx-t* (+ *fx-t* (/ dt 1000.0)))
       (set! *shake-px* (max 0.0 (* *shake-px* 0.85)))
+      (set! *danger-paint-ms* (max 0 (- *danger-paint-ms* dt)))
       (if (and *flash-rgb* (> *flash-ms* 0))
           (set! *flash-ms* (max 0 (- *flash-ms* dt)))
           (set! *flash-rgb* #f))
@@ -161,12 +190,15 @@
 
     (define (shake-offset) (exact (round *shake-px*)))
 
-    ;; Grid coordinate -> pixel coordinate, as a pipeline: scale by the cell
-    ;; size, then add the board origin — and the shake, so a thud moves the
-    ;; whole well, not a rectangle here and there. SRFI 197 writes the data
-    ;; flow in the order it runs.
-    (define (px x) (chain x (* _ (lay cell:)) (+ (lay board-x:) _ (shake-offset))))
-    (define (py y) (chain y (* _ (lay cell:)) (+ (lay board-y:) _ (shake-offset))))
+    ;; Grid coordinate -> pixel coordinate: scale by the cell size, then
+    ;; add the board origin — and the shake, so a thud moves the whole
+    ;; well, not a rectangle here and there. Plain arithmetic ON PURPOSE:
+    ;; these run once per settled cell per repaint, and a `chain` step
+    ;; costs its macro expansion on every call — ~0.7ms against ~0.03ms
+    ;; here. In an inner loop that is the difference between a frame and
+    ;; a slideshow; `chain` keeps the one-shot pipelines (see centered-x).
+    (define (px x) (+ (lay board-x:) (* x (lay cell:)) (shake-offset)))
+    (define (py y) (+ (lay board-y:) (* y (lay cell:)) (shake-offset)))
 
     (define (cell-size) (- (lay cell:) 1))
 
@@ -187,12 +219,19 @@
                   cells)))
 
     (define (draw-board! st)
-      (let ((s (cell-size)))
+      ;; The hot path: one call per settled cell per repaint. The layout
+      ;; reads and the shake are hoisted out of the loop — the body is one
+      ;; multiply, two adds, and the seam crossing.
+      (let* ((cell (lay cell:))
+             (s (- cell 1))
+             (ox (+ (lay board-x:) (shake-offset)))
+             (oy (+ (lay board-y:) (shake-offset))))
         (for-each
          (lambda (entry)
            (let ((pos (car entry)) (name (cdr entry)))
-             (draw-rect! (px (car pos)) (py (cdr pos)) s s
-                         (piece-color name))))
+             (draw-rect! (+ ox (* (car pos) cell))
+                         (+ oy (* (cdr pos) cell))
+                         s s (piece-color name))))
          (board-cells (game-board st)))))
 
     (define (draw-well!)
@@ -343,12 +382,16 @@
       (draw-well!)
       ;; Danger breathes on the frame: a stack four rows from the ceiling
       ;; pulses the well's border toward warn, faster as the end nears.
+      ;; Painting re-arms the repaint gate (see `view-busy?`): the pulse
+      ;; is sampled at ~15 fps, and the frames between are free.
       (if (danger-tint? st)
-          (draw-frame! (- (lay board-x:) 2) (- (lay board-y:) 2)
-                       (+ (* matrix-width (lay cell:)) 3)
-                       (+ (* matrix-height (lay cell:)) 3)
-                       (mix-rgb (color frame:) (color warn:)
-                                (* 0.5 (+ 1.0 (sin (* 8 *fx-t*))))))
+          (begin
+            (set! *danger-paint-ms* 66)
+            (draw-frame! (- (lay board-x:) 2) (- (lay board-y:) 2)
+                         (+ (* matrix-width (lay cell:)) 3)
+                         (+ (* matrix-height (lay cell:)) 3)
+                         (mix-rgb (color frame:) (color warn:)
+                                  (* 0.5 (+ 1.0 (sin (* 8 *fx-t*)))))))
           #f)
       (draw-board! st)
       ;; The clear beam: bright bars across the rows the last clear took —

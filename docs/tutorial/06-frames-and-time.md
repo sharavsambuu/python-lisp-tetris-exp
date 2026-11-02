@@ -28,9 +28,11 @@ The play screen's frame is `play-frame` in the conductor:
 ;; happened in) — and the state the events produced is SAVED, or the
 ;; player's keys would land in a discarded world — then the AI's one
 ;; step, then gravity, then the draw. A frame draws only when something
-;; happened. Held-key repeats arrived in this frame's events, pumped by
+;; happened — and `*dirty*` is read HERE, after the events, on purpose:
+;; a pause keypress sets it mid-frame, and the veil must paint this
+;; frame. Held-key repeats arrived in this frame's events, pumped by
 ;; the host on its own clock.
-(define (play-frame st dirty)
+(define (play-frame st)
   (let* ((dt (tick!))
          (evs (poll-events!)))
     (set! *st* (apply-events st evs))
@@ -89,7 +91,7 @@ spends the bank (`step-time`), and stops the moment the phase changes under it:
   (let loop ((s state) (i 0))
     (if (or (>= i n) (not (playing? s)))
         (ok s)
-        (result-bind (soft-fall s) (cut loop <> (+ i 1))))))
+        (result-bind (fall-by-one s #f) (cut loop <> (+ i 1))))))
 ```
 
 ### The bank, in numbers

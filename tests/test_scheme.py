@@ -3,16 +3,20 @@
 # Each suite runs through the DSL with no pygame: the checks themselves
 # raise (or the testkit reports), so a clean load *is* the green light.
 
+import os
 from pathlib import Path
 
+import pytest
+
 import lisp.evaluator
-from lisp import load_lisp, make_env
+from lisp import load_lisp, make_env, run
 
 # The domain tests steer a whole sprint match through the one-ply planner —
 # hundreds of thousands of interpreter steps in one top-level form. The
 # default 5M-step budget is a hang detector for production runs; a test that
-# *is* a long computation asks for more. The set lives in a fixture, not at
-# module scope, so another suite's cleanup can never shrink it.
+# *is* a long computation asks for more. The module-scope raise is the floor
+# the first suite loads under; `_load` re-raises the budget per suite, so
+# one suite's ceiling can never leak into another's.
 lisp.evaluator.STEPS_BUDGET = 50_000_000
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,8 +24,8 @@ SCHEME = ROOT / "scheme"
 TESTS = ROOT / "tests" / "scm"
 
 
-def _load(name, extra_paths=()):
-    lisp.evaluator.STEPS_BUDGET = 50_000_000
+def _load(name, extra_paths=(), budget=50_000_000):
+    lisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
     assert env is not None
@@ -39,6 +43,29 @@ def test_gameplay_behavior():
 def test_ui_behavior():
     """Screens and painter calls, asserted against the fake host's draw log."""
     _load("ui-tests.scm", extra_paths=[TESTS])
+
+
+def test_shell_transitions():
+    """Every screen transition, keys through the fake host's event queue."""
+    _load("shell-tests.scm", extra_paths=[TESTS])
+
+
+@pytest.mark.skipif(not os.environ.get("SCHEME_RUN_ALL"),
+                    reason="run-all re-runs every Scheme suite under one "
+                           "env — the slow walk. SCHEME_RUN_ALL=1 to "
+                           "include it; the suites themselves run above.")
+def test_run_all_orchestrates_every_suite():
+    """The Scheme runner loads and guards all four suites in one env.
+
+    `run-all.scm` is the Scheme-side entry point (`shs run
+    tests/scm/run-all.scm`); this test proves the orchestration — shared
+    env, cached module loads, per-suite guards — holds together, so the
+    suites stay runnable with pytest as nothing but the bootstrap that
+    raised the step budget. The shared env carries every earlier suite's
+    top-level bindings, and the planner-heavy forms pay a little for that,
+    so the ceiling here is sized for the whole walk, not one suite.
+    """
+    _load("run-all.scm", extra_paths=[TESTS], budget=500_000_000)
 
 
 def test_domain_modules_are_pure_r7rs_libraries():
@@ -62,3 +89,28 @@ def test_domain_modules_are_pure_r7rs_libraries():
         text = (SCHEME / rel).read_text()
         for word in forbidden:
             assert word not in text, f"{rel} names the host: {word}"
+
+
+def test_painter_keeps_up_with_a_full_board():
+    """draw-board! on a full board stays far under the frame budget.
+
+    A regression guard for the `chain`-in-the-inner-loop slowdown: px/py
+    once paid ~0.7 ms a call in macro expansion, and a full board's
+    repaint burned ~300 ms — a slideshow. Plain arithmetic paints the
+    same 200 cells in ~15 ms. The bound sits far above the fixed cost
+    and far below the regressed one, so only a real regression trips it.
+    """
+    import time
+
+    lisp.evaluator.STEPS_BUDGET = 100_000_000
+    env = make_env(search_paths=[SCHEME, TESTS])
+    load_lisp(env, TESTS / "bench-view.scm")
+
+    run("(draw-board! *st*)", env)  # warm
+    t0 = time.perf_counter()
+    for _ in range(5):
+        run("(draw-board! *st*)", env)
+    per_call_ms = (time.perf_counter() - t0) / 5 * 1000
+    assert per_call_ms < 100, (
+        f"draw-board! on a full board takes {per_call_ms:.0f} ms — the "
+        "painter is burning its budget in the inner loop again")

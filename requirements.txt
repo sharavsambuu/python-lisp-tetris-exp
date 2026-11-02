@@ -1,2 +1,4 @@
 pygame-ce
-git+https://github.com/sharavsambuu/shs-python-scheme-dsl.git
+# Pinned to the commit this repo's suite is green against — the DSL is the
+# whole runtime, and a HEAD change can break it. Bump deliberately.
+git+https://github.com/sharavsambuu/shs-python-scheme-dsl.git@4050d8ce1b2f0189be80b5709bb6c23890d99947

@@ -210,19 +210,35 @@ policy explicit in one fold.
 Time is just another caller:
 
 ```scheme
-;; One gravity pull: down a row, or — if the floor is there — the lock track.
-;; This is the arrow gravity and the soft-drop key share.
-(define (soft-fall state)
-  (let ((r (try-shift state 0 1)))
-    (if (result-ok? r)
-        (let ((s* (ok-value r)))
-          (ok (game-with s* score: (+ (game-score s*) (drop-points 'soft 1)))))
+;; One pull of descent: down a row, or — if the floor is there — the
+;; lock track. `loud?` decides whether the move is journaled: a player's
+;; soft-drop keypress is a fact worth a blip, but gravity is the clock's
+;; work, and an idle match should be silent.
+(define (fall-by-one state loud?)
+  (let* ((p (game-active state))
+         (ny (+ (falling-y p) 1)))
+    (if (fits-at? state (falling-name p) (falling-rot p)
+                  (falling-x p) ny)
+        (let ((s* (game-with state
+                             active: (make-falling (falling-name p)
+                                                   (falling-x p) ny
+                                                   (falling-rot p))
+                             score: (+ (game-score state)
+                                       (drop-points 'soft 1)))))
+          (ok (if loud? (with-event s* (moved)) s*)))
         (lock-and-spawn state))))
+
+;; The soft-drop key's arrow: the shared descent, announced.
+(define (soft-fall state)
+  (fall-by-one state #t))
 ```
 
-A held key's `down` and a due gravity tick go through the *same* arrow, so
+A held key's `down` and a due gravity tick go through the *same* descent, so
 there is exactly one lock path, one spawn path, one game-over path. When a bug
-report says "the piece locked twice", there is one place to look.
+report says "the piece locked twice", there is one place to look. The one
+thing the two callers do not share is the journal entry: gravity passes
+`loud? #f`, so an idle match falls in silence; the player's keypress journals
+`(moved)` and earns its blip.
 
 The harder compositions are worth reading as prose. `hard-drop!` is a
 conditional pipeline: fall the whole distance, *then* lock — unless the

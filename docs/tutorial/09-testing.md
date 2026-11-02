@@ -1,7 +1,9 @@
 # Chapter 9 — Testing a game with no mocks
 
 *The files it dissects: `tests/scm/fake-host.scm`, `tests/scm/testkit.scm`,
-`tests/scm/gameplay-tests.scm`, `tests/test_scheme.py`.*
+`tests/scm/gameplay-tests.scm`, `tests/scm/shell-tests.scm`,
+`tests/scm/run-all.scm`, `tests/test_scheme.py`, and the real-pump twin
+`tests/test_menu_transitions.py`.*
 
 > **Where you are.** Chapters 1–8 built a complete, smart, visible game.
 > Before optimizing anything (chapter 10), you make it *provable*. Everything
@@ -9,8 +11,9 @@
 > chapter shows how.
 >
 > **By the end of this chapter you can** implement a host contract twice
-> (real + fake), write playthrough tests with seeded clocks, and choose
-> between log assertions, contract tests, and pixel tests.
+> (real + fake), write playthrough tests with seeded clocks, walk the same
+> transition map through both hosts, and choose between unit, playthrough,
+> log, transition, and pixel assertions.
 >
 > **The running project.** Breakout's bounce contract becomes a test: ball
 > hits wall, direction flips, no frames lost.
@@ -27,12 +30,13 @@ shadowing the Python ones the pytest harness installed:
 ```scheme
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
-;;; The edge modules speak to sixteen host primitives. This file DEFINES
-;;; ALL SIXTEEN in Scheme, shadowing the Python ones the pytest harness
-;;; installed, so the whole arcade loop runs in pure Scheme: no pygame,
-;;; no SDL dummy driver, no seam. Every painter call is recorded in
-;;; `*host-log*`, so UI behavior is asserted against a draw-call log
-;;; instead of pixels.
+;;; The edge modules (presentation/view, conductor/arcade) speak to sixteen
+;;; host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
+;;; Python ones the pytest harness installed, so the whole arcade loop runs
+;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
+;;; call is recorded in `*host-log*`, so UI behavior is asserted against a
+;;; draw-call log instead of pixels — a layout tweak moves log entries, not
+;;; test coordinates.
 ```
 
 The recording fakes answer exactly what the real host answers — poll events
@@ -56,7 +60,8 @@ which is the *coincidence*.
 
 ## 9.2 Scripting the world
 
-The fake host exposes a small scripting vocabulary:
+The fake host exposes a small scripting vocabulary — and the distinction
+between its two "press a key" verbs is the chapter's best fidelity lesson:
 
 ```scheme
 ;; Queue one key-down: the alist shape the real host builds. A press also
@@ -66,7 +71,47 @@ The fake host exposes a small scripting vocabulary:
 (define (host-clock! dt n) ...)          ;; the next n frames advance dt each
 (define (host-run-frames! n) ...)        ;; run the real loop for n frames
 (define (host-run-while-playing! n) ...) ;; run until a win or a loss
-(define (host-type! key) ...)            ;; press a key, give it one frame
+(define (host-type! key) ...)            ;; press AND HOLD — the DAS tests
+                                         ;;   want the repeats it fires
+(define (host-tap! key) ...)             ;; press, one frame, pump entry
+                                         ;;   cleared — a physical keypress
+(define (host-queue-quit!) ...)          ;; a quit, as the WM sends one
+```
+
+Why two verbs? Because `host-press!` seeds the repeat pump and nothing
+releases it — a *fake* has no keyup unless something queues one, and a
+physical keyboard always does. The first menu-traversal suite used the hold
+verb everywhere, and the stale pump entries fired repeat floods for the rest
+of the run — burying later presses in the queue, so the ESC tests failed in
+ways the real game could not reproduce. The fix is not a tweak, it is a
+second verb with a contract:
+
+```scheme
+;; A quick tap: press, one frame, then the pump's countdown for that key is
+;; cleared. A physical key's KEYUP lands between frames, so a tap never
+;; reaches the DAS delay and never repeats. ...
+;; (`host-type!` keeps the hold — that is what the DAS tests want; a menu
+;; traversal wants taps, or stale entries fire repeat floods for the rest
+;; of the run and bury later presses.)
+(define (host-tap! key)
+  (host-type! key)
+  (set! *host-held-clock*
+        (filter (lambda (e) (not (string=? (car e) key)))
+                *host-held-clock*)))
+```
+
+The scar generalizes: **a fake must model not just what the real host does
+but what the physical world does between frames** — a KEYUP is world
+behavior, not host behavior, and the first fake omitted it. The DAS tests
+use `host-type!`; every menu traversal uses `host-tap!`.
+
+The read-back side is a log, and the log is queried, not dumped:
+
+```scheme
+(define (host-ops op) ...)        ;; every log entry for one op, oldest first
+(define (host-text-strings) ...)  ;; every string the painter drew
+(define (host-sfx-names) ...)     ;; every blip, in order — the effects rail
+(define (host-fits-window? e) ...) ;; nothing painted outside the viewport
 ```
 
 And the fake host implements the **same repeat pump** as the real one
@@ -141,21 +186,134 @@ DSL: `define-syntax` does not cross a file boundary here, but procedures do.
 So the sugar (`tk-check`/`tk-assert`) is re-defined as a two-line macro in
 each suite, and all the state lives in the kit.
 
-## 9.5 The pytest harness
+## 9.5 The whole shell, walked twice
+
+The gameplay suite proves what a *match* does. The shell — which key goes to
+which screen — gets its own suite, `shell-tests.scm`, and it teaches two
+tricks beyond the playthroughs.
+
+**The first trick: walk the same map through both hosts.** The shell's
+transition table is checked by two suites that differ in exactly one thing —
+the host:
+
+- `shell-tests.scm` walks it through the fake host: queued alists, the
+  scripted clock, the log;
+- `test_menu_transitions.py` walks the *same* map through the REAL pygame
+  pump: real keycodes, real KEYDOWN/KEYUP pairs, SDL's dummy driver.
+
+The conductor's dispatch is thus checked against two independent
+implementations of the event contract. Wherever the two suites disagree,
+one of the hosts is lying — and the suite tells you which. (This is how the
+tap-vs-type scar of §9.2 was found: the fake's event queue diverged from a
+physical keyboard's, and the disagreement *was* the bug report.)
+
+**The second trick: make the bug's precondition constructible.** Some bugs
+are hard to reach through play. The result-screen journal bug (a dropped
+`drain-journal!` return value that replayed the victory every frame) lives
+only when a terminal phase holds an unread fact — a state normal play
+always drains before the phase flips. So the regression test *constructs*
+the precondition directly:
+
+```scheme
+;; The result screen reads the journal exactly once: a terminal fact is
+;; announced on the frame it lands and never again, however long the
+;; result sits. The journal must actually DRAIN — a dropped
+;; `drain-journal!` return value here repainted the screen and replayed
+;; the victory every frame, machine-gun style.
+(boot-into! 'sprint '((target-lines 1)))
+(set! *st* (with-event (game-with *st* phase: (won)) (victory)))
+(host-run-frames! 10)
+(tk-check "the victory is heard exactly once"
+          (count (cut string=? "victory" <>) (host-sfx-names)) 1)
+(tk-assert "the result journal drained" (null? (game-journal *st*)))
+```
+
+Ten result frames; the victory must be heard exactly once. Before the fix
+this printed ten. The test is honest precisely because the state is forced:
+state is a value, so `(game-with *st* phase: (won))` is not a mock — it is
+the real state, one fact short of drained. The same suite keeps forcing
+helpers for the other hard-to-reach states: `win-now!` (a victory with the
+recipe kept) and `play-until-over!` (slam pieces into the spawn column
+until top-out — no steering, a fat clock, gravity fills the well).
+
+## 9.6 Choosing the level
+
+With five suites in the drawer, the question is which one a new test
+belongs in. The answer is the *level* of the claim:
+
+| The claim is about… | The suite | Asserts against |
+|---|---|---|
+| a pure function, invariant, or refusal | `domain-tests.scm` | values, directly |
+| behavior a player would feel (DAS rhythm, a scoring chain, a won ladder) | `gameplay-tests.scm` | match state, phases, the sfx log |
+| what a screen paints and whether it fits | `ui-tests.scm` | the draw-call log |
+| which key goes to which screen | `shell-tests.scm` | `*screen*` and the phase after every key |
+| that the draw calls *land* | `test_host_smoke.py` | real pixels, real process |
+| that a hot path *stays* fast | the benchmark guard (chapter 13) | wall-clock with justified bounds |
+
+Two rules keep the drawer tidy. **Climb only as high as the claim**: a
+screen-transition bug does not need a pixel test, and a scoring bug does
+not need the real pump. And **when the finding is about the host's event
+shape, add the twin** — the fake-host check plus the real-pump twin in
+`test_menu_transitions.py`, so the contract is pinned from both sides.
+
+## 9.7 Pitfalls, one scar each
+
+The strategy above is the positive space. These are the negative — each one
+a way a DSL test suite lies to you, each learned the hard way:
+
+- **A test that leans on the previous test's state is a test that breaks
+  when reordered.** The conductor is top-level `set!` state, and the loader
+  runs suites in one shared environment — so every section opens with the
+  ritual (`boot-fresh!` / `boot-into!`), and no assertion may reach back
+  past it. The state is a value; build the one the claim needs.
+- **Membership checks cannot see repetition.** The original victory check
+  was `(member "victory" (host-sfx-names))` — and it *passed* while the
+  journal-drain bug replayed the sound three times. Repetition is a failure
+  mode; count, don't just search:
+
+  ```scheme
+  (tk-check "the victory is heard exactly once"
+            (count (cut string=? "victory" <>) (host-sfx-names)) 1)
+  ```
+
+- **A clean load is the green light — so make silence impossible.** A suite
+  that loads and prints nothing has proven nothing: the kit's `tk-report!`
+  prints a verdict, and the domain suite raises on the first surprise. If
+  your harness can exit green with no output, it will, eventually, proudly.
+- **The step budget is per top-level form.** A suite that passes alone can
+  die under the orchestrator after an innocent edit makes its heaviest form
+  heavier — and the raise is uncatchable by `guard` (chapter 13 §13.7). The
+  raise lives in the bootstrap; know which form is your heaviest.
+- **Enumerate the closed vocabularies.** `define-variant` makes a forgotten
+  dispatch arm a named error at runtime — but only if something *reaches*
+  that arm. The dead `sfx-command!` table survived because no test walked
+  every command and asked what it sounds like. A loop over the variant's
+  constructors is the cheapest fence you will ever write.
+- **A textual fence is a weak fence.** The purity test greps forbidden
+  substrings, so it false-positives on a comment and cannot see a smuggled
+  `(import ...)`. Keep it as a tripwire, but trust the closed library
+  scopes — the compiler-enforced boundary — not the grep.
+- **Assert the invariant, not the incident.** "The journal is empty after
+  any painted frame" would have caught the drain bug in every suite at
+  once; the incident-specific test catches it once. Where a scar has a
+  general shape, pin the shape.
+
+## 9.8 The pytest harness, and the Scheme-side runner
 
 `tests/test_scheme.py` drives the Scheme files from Python:
 
 ```python
 def test_gameplay_behavior():
-    """The whole input → command → rules → presentation loop, headless."""
+    """Whole matches through the real conductor loop, against the fake host."""
     _load("gameplay-tests.scm", extra_paths=[TESTS])
 ```
 
 The harness's job is minimal — build an environment with the search paths,
-install the real host primitives, load the file, and let `tk-report!`'s raise
-be the pass/fail. The *content* of testing lives in Scheme, next to the code
-it tests. Keep it that way: a test suite split across two languages ages
-badly unless the Python side is dumb glue.
+load the file, and let `tk-report!`'s raise be the pass/fail. It installs
+*nothing*: the fake host defines all sixteen primitives in Scheme, so the
+suites never see a Python-installed name. The *content* of testing lives in
+Scheme, next to the code it tests. Keep it that way: a test suite split
+across two languages ages badly unless the Python side is dumb glue.
 
 The whole harness is one helper:
 
@@ -167,8 +325,8 @@ The whole harness is one helper:
 
 lisp.evaluator.STEPS_BUDGET = 50_000_000
 
-def _load(name, extra_paths=()):
-    lisp.evaluator.STEPS_BUDGET = 50_000_000
+def _load(name, extra_paths=(), budget=50_000_000):
+    lisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
     assert env is not None
@@ -179,7 +337,24 @@ tests steer a whole sprint match through the one-ply planner — hundreds of
 thousands of interpreter steps in one top-level form. The interpreter's
 default 5M-step budget is a *hang detector* for production runs; a test that
 *is* a long computation asks for more. The number lives in the harness, not
-in the game, so a stuck game loop still dies loudly.
+in the game, so a stuck game loop still dies loudly — and `_load` re-raises
+it per suite, so one suite's ceiling can never leak into another's.
+
+And the glue is thinner than it looks, because the suites can run *without*
+pytest at all. `tests/scm/run-all.scm` is a Scheme-side orchestrator: one
+interpreter, all four suites, each wrapped in a `guard` with a tally and an
+honest exit code —
+
+```
+SHS_PATH=scheme:tests/scm env/bin/shs run tests/scm/run-all.scm
+```
+
+— which is the proof that pytest is the bootstrap, not the framework. Under
+pytest, the orchestration is itself a test, gated behind `SCHEME_RUN_ALL=1`
+because it re-runs every suite (the walk is slow; the suites already ran
+above it). One more guard lives in the same file:
+`test_painter_keeps_up_with_a_full_board` times `draw-board!` on a crafted
+full board — a benchmark with committed bounds, whose craft is chapter 13's.
 
 Two more tests worth reading in `test_scheme.py`:
 
@@ -214,7 +389,7 @@ arrow on failures, or dropped the carried value. When a law has a concrete
 witness like `halve`, a failure message points at the *behavior* that broke,
 not at a Greek letter.
 
-## 9.6 Pixel tests, for the one thing fakes can't see
+## 9.9 Pixel tests, for the one thing fakes can't see
 
 `tests/test_host_smoke.py::test_painter_paints` boots the REAL host with the
 SDL dummy driver, plays to a live match, paints one frame, and reads pixels:
@@ -240,12 +415,17 @@ host proves the *sequence* of draw calls; only the real host proves the calls
    the clamp and write the one that would catch its removal.
 3. Add `host-screenshot!` to the fake host that returns the draw log as a
    canonical string, and snapshot-test the title screen's layout.
+4. Take one of the shell's transitions and write its real-pump twin in
+   `test_menu_transitions.py`. Then break the conductor's dispatch for that
+   key on purpose, and check which of the two suites catches it — and
+   whether both name the same lie.
 
 ---
 
 ✓ **Checkpoint.** You can fake a host contract faithfully, script a seeded
-  playthrough test, and pick the right assertion level — log, contract, or
-  pixel — for what you are proving.
+  playthrough test, walk a transition map through both hosts, and pick the
+  right assertion level — unit, playthrough, log, transition, or pixel —
+  for what you are proving.
 
 *Next: [Performance in an interpreter](10-performance.md) — where the
 milliseconds go.*

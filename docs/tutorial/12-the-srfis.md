@@ -171,21 +171,31 @@ constructor's contract is its signature. The mode options are validated by
 `(tetris modes)`, which raises a named condition on a typo (chapter 4)
 rather than guessing.
 
-## 12.5 SRFI 197 — `chain` for pixel pipelines
+## 12.5 SRFI 197 — `chain` for one-shot pipelines
 
-The painter's coordinate math is a pipeline: scale by the cell size, offset
-by the board origin, add the shake. `chain` writes it in reading order:
+Some of the painter's math is a pipeline: measure the string, take half the
+slack, add the left edge. `chain` writes it in reading order:
 
 ```scheme
-(define (px x)
-  (chain x (* _ (lay cell:)) (+ (lay board-x:) _ (shake-offset))))
+(define (centered-x left width s size)
+  (chain (quotient (- width (text-width s size)) 2)
+         (+ left _)))
 ```
 
 `_` is the placeholder, substituted at each step. The nested-arithmetic
-spelling of the same line buries the *order* — scale, then offset — in
-inside-out parens. `chain` is used only in the view, only for coordinate
-math: a pipeline operator earns its keep where the data genuinely flows left
-to right.
+spelling of the same line buries the *order* in inside-out parens. `chain`
+is used only in the view, only for math that runs once a frame or less.
+
+And that qualifier is the chapter's scar. The grid-to-pixel converters `px`
+and `py` were once `chain` pipelines too — and they run once per settled
+cell per repaint. A `chain` step pays its macro expansion on every call:
+~0.7 ms a call in this interpreter against ~0.03 ms for the arithmetic. Two
+hundred settled cells later, the *sugar* was burning ~300 ms a frame — more
+than the seam itself. The fix was not a ban but a placement rule:
+
+> `chain` is for pipelines that run once. An inner loop pays for its sugar
+> on every call — a hot `px` is plain arithmetic, with the order in a
+> comment.
 
 ## 12.6 SRFI 241 — `match` with constant patterns
 
@@ -236,7 +246,7 @@ The codebase's comments repeat it because everyone writes this bug once.
 | 26 | `cut` when the hole is not the last argument |
 | 88 | Keywords for small fixed option tables and cross-language event keys |
 | 89 | `define*` for any constructor whose arguments have meanings |
-| 197 | `chain` for genuinely left-to-right pipelines (pixel math) |
+| 197 | `chain` for one-shot left-to-right pipelines — never an inner loop |
 | 241 | `match` for tables read by constant patterns; remember `,_` |
 
 The meta-lesson: **each SRFI is used where it is the shortest honest

@@ -8,14 +8,15 @@ one the game actually relies on.
 
 ## How the series teaches
 
-The twelve chapters form one arc, in four parts. Each chapter opens with
+The thirteen chapters form one arc, in four parts. Each chapter opens with
 **where you are** and **what you will be able to do**, and closes with a
 **checkpoint** — a one-line self-test. Read them in order the first time;
 after that, each stands alone as a reference.
 
 Alongside the reading you build a **running project**: a Breakout clone on the
 same DSL, one piece per chapter — a boot and a paddle in chapter 1, a frame
-loop in chapter 6, an AI in chapter 8, a purity fence in chapter 11. The
+loop in chapter 6, an AI in chapter 8, a purity fence in chapter 11, a
+benchmark guard in chapter 13. The
 exercises marked ⟡ are its steps; by the end you will have written a second,
 smaller game in this style, and every technique will be something you have
 *done*, not something you have *read*.
@@ -42,7 +43,7 @@ smaller game in this style, and every technique will be something you have
 | # | Chapter | You learn |
 |---|---------|-----------|
 | 8 | [The one-ply planner](08-the-planner.md) | Profile arithmetic, placement scoring, the frame-budgeted search |
-| 9 | [Testing a game with no mocks](09-testing.md) | The host as data, seeded playthroughs, collecting test kits |
+| 9 | [Testing a game with no mocks](09-testing.md) | The host as data, seeded playthroughs, the two-host transition walk, pitfalls, collecting test kits |
 | 10 | [Performance in an interpreter](10-performance.md) | Where the milliseconds go, caches, quiet frames, the step budget |
 
 ### Part IV — The craft (naming what you have learned)
@@ -51,6 +52,7 @@ smaller game in this style, and every technique will be something you have
 |---|---------|-----------|
 | 11 | [Bounded contexts](11-bounded-contexts.md) | DDD with `define-library`: closed scopes, the dependency DAG, the purity fence |
 | 12 | [The six SRFIs](12-the-srfis.md) | SRFI 1/26/88/89/197/241 — where each earns its keep, and the judgment calls |
+| 13 | [Hot paths](13-hot-paths.md) | The three slowdown traps of a tree-walking interpreter, worst-case harnesses, benchmark guards with justified bounds |
 
 
 ## What the root README flexes → where the series teaches it
@@ -67,7 +69,7 @@ smaller game in this style, and every technique will be something you have
 | **SRFI 26** (`cut` specializes arrows) | [12](12-the-srfis.md) (§12.2), [3](03-the-railway.md) |
 | **SRFI 88** (keywords name the tables and event keys) | [12](12-the-srfis.md) (§12.3), [7](07-the-edge.md) |
 | **SRFI 89** (`define*` gives the difficulty surface its knobs) | [12](12-the-srfis.md) (§12.4), [5](05-state-as-a-value.md) |
-| **SRFI 197** (`chain` shapes the pixel pipelines) | [12](12-the-srfis.md) (§12.5), [7](07-the-edge.md) |
+| **SRFI 197** (`chain` shapes the pixel pipelines) | [12](12-the-srfis.md) (§12.5), [7](07-the-edge.md), [13](13-hot-paths.md) (§13.2 — where it does *not* belong) |
 | **SRFI 241** (`match` reads the keymap and award tables) | [12](12-the-srfis.md) (§12.6), [2](02-closed-vocabularies.md) |
 
 ## Running the game while you read

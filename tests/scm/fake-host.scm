@@ -185,6 +185,20 @@
   (host-press! key)
   (arcade-step!))
 
+;; A quick tap: press, one frame, then the pump's countdown for that key is
+;; cleared. A physical key's KEYUP lands between frames, so a tap never
+;; reaches the DAS delay and never repeats. The release must NOT queue a
+;; key-up event: the fake poll answers one event per call, and a queued
+;; key-up would steal the next frame's single event slot from a real press.
+;; (`host-type!` keeps the hold — that is what the DAS tests want; a menu
+;; traversal wants taps, or stale entries fire repeat floods for the rest
+;; of the run and bury later presses.)
+(define (host-tap! key)
+  (host-type! key)
+  (set! *host-held-clock*
+        (filter (lambda (e) (not (string=? (car e) key)))
+                *host-held-clock*)))
+
 ;; --------------------------------------------------------------------- ;;
 ;;  Reading the log                                                        ;;
 ;; --------------------------------------------------------------------- ;;

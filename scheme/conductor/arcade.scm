@@ -51,7 +51,7 @@
     ;; The raw menu shape — `(entries cursor)` — until boot! builds the real
     ;; one (make-menu is defined below; top-level defines run in order).
     (define *menu* (list '() 0))
-    (define *mode* "marathon") ;; the free-play mode the player picked
+    (define *mode* 'marathon) ;; the free-play mode the player picked (a symbol)
     (define *level* 1)         ;; the free-play level a match starts on
     (define *bests* '())       ;; ((label score) ...) — this session's bests
     (define *campaign* #f)     ;; the campaign whose levels the screen shows
@@ -80,21 +80,16 @@
     (define *weights* (weights 2.0 2.5 0.5 0.6))
 
     ;; ---------------------------------------------------------------- ;;
-    ;;  The speaker — which command, which fact, which blip                ;;
+    ;;  The speaker — which fact, which blip                               ;;
     ;; ---------------------------------------------------------------- ;;
     ;;
-    ;; The edge owns the speaker primitive; the *policy* — which command
-    ;; earns which blip, which fact outranks which — is a table here. One
-    ;; sound a turn: the loudest fact wins, in the order the table reads.
-
-    (define *sfx-command*
-      '((move-left  "move")
-        (move-right "move")
-        (down       "soft-drop")
-        (rotate-cw  "rotate")
-        (rotate-ccw "rotate")
-        (hard-drop  "hard-drop")
-        (hold-piece "hold")))
+    ;; The edge owns the speaker primitive; the *policy* — which fact
+    ;; outranks which — is a table here. One sound a turn: the loudest
+    ;; fact wins, in the order the table reads. A player's command is
+    ;; heard through the journal it journaled (a move, a rotation, a
+    ;; lock); there is no second, per-command table — the keymap's tags
+    ;; never matched its keys, and the journal has been the effects rail
+    ;; all along.
 
     (define *sfx-fact*   ;; (fact-tag kind), loudest first
       '((game-over "over")
@@ -102,12 +97,6 @@
         (level-up  "level-up")
         (cleared   "clear")
         (restarted "start")))
-
-    (define (sfx-command! cmd)
-      (if cmd
-          (let ((kind (assq cmd *sfx-command*)))
-            (if kind (sfx! (cadr kind)) #f))
-          #f))
 
     (define (sfx-journal! events)
       (let loop ((order *sfx-fact*))
@@ -200,7 +189,12 @@
     ;; message instead of dying.
     (define (start-match! mode-name options origin challenge key index)
       (guard (e (#t
-                 (set! *screen* 'title)
+                 ;; The refusal must leave a HEALTHY title: the menu value
+                 ;; rebuilt, the flag dirty. Only assigning the symbol here
+                 ;; froze whatever screen the player was on — and, on a cold
+                 ;; boot with a bad --mode, left the never-built empty menu,
+                 ;; whose first RETURN crashed.
+                 (show-screen! 'title (title-menu))
                  (display "match refused: ")
                  (display (describe-condition e))
                  (newline)))
@@ -214,6 +208,7 @@
           (set! *settled* #f)
           (set! *screen* 'play)
           (reset-ai!)
+          (view-reset!)
           (sfx! "start"))))
 
     (define (describe-condition e)
@@ -239,7 +234,12 @@
     ;; its rung done. Both are edge state — the match record stays a value.
     (define (settle-match! st)
       (let ((label (mode-label (game-config st))))
-        (set! *bests* (record-best *bests* label (game-score st)))
+        ;; The best is FREE PLAY's scoreboard: a campaign's score is the
+        ;; rung's, and recording it here leaked ladder wins (and ladder
+        ;; losses) into the mode list the title decorates.
+        (if (eq? *origin* 'free)
+            (set! *bests* (record-best *bests* label (game-score st)))
+            #f)
         (if (and (eq? *origin* 'campaign)
                  *playing-key*
                  (phase-won? st))
@@ -360,14 +360,6 @@
       (set! *search-hts* #f)
       (set! *search-rows* 20)
       (set! *search-shapes* #f))
-
-    (define (piece-key st)
-      ;; The identity of the piece a plan belongs to: lock count *and* kind.
-      ;; `pieces-locked` alone is not enough: a hold swaps the active piece
-      ;; without locking one, so the key would stay the same and the plan
-      ;; would steer the new piece with the old piece's shape.
-      (list (length (game-journal st))
-            (if (game-active st) (falling-name (game-active st)) #f)))
 
     (define (best-placement st ws)
       (let ((key (piece-key st)))
@@ -512,6 +504,7 @@
     (define (show-screen! screen menu)
       (set! *screen* screen)
       (set! *menu* menu)
+      (view-reset!)   ; menus wear no match's flash or beam
       (set! *dirty* #t))
 
     (define (back!)
@@ -664,13 +657,13 @@
                ((string=? key "q")
                 (quit!)
                 st)
-               ;; Everything else goes through the keymap, once. A press
-               ;; fires its command and its blip.
+               ;; Everything else goes through the keymap, once. The
+               ;; blip, if any, is the journal's — the frame's drain
+               ;; speaks for the move.
                (else
                 (let ((cmd (key->command key)))
                   (if cmd
                       (let ((r (apply-command st cmd)))
-                        (sfx-command! cmd)
                         (if (result-ok? r) (ok-value r) st))
                       st))))))
           ((key-repeat)
@@ -698,9 +691,11 @@
     ;; happened in) — and the state the events produced is SAVED, or the
     ;; player's keys would land in a discarded world — then the AI's one
     ;; step, then gravity, then the draw. A frame draws only when something
-    ;; happened. Held-key repeats arrived in this frame's events, pumped by
+    ;; happened — and `*dirty*` is read HERE, after the events, on purpose:
+    ;; a pause keypress sets it mid-frame, and the veil must paint this
+    ;; frame. Held-key repeats arrived in this frame's events, pumped by
     ;; the host on its own clock.
-    (define (play-frame st dirty)
+    (define (play-frame st)
       (let* ((dt (tick!))
              (evs (poll-events!)))
         (set! *st* (apply-events st evs))
@@ -756,27 +751,49 @@
                    (play-key! (cadr (assq key: (car rest)))))
                   (else #f))
                 (loop (cdr rest)))))
-        (if (or *dirty* (view-busy? *st*) (not (null? (game-journal *st*))))
+        (if (eq? *screen* 'play)
+            ;; Still the match's screen: paint it, and the drain speaks
+            ;; for it.
+            (if (or *dirty* (view-busy? *st*) (not (null? (game-journal *st*))))
+                (begin
+                  (draw-game! *st*)
+                  ;; The drained state is the state — the live path's own
+                  ;; discipline. Dropping this value left the terminal fact
+                  ;; in the journal forever: the result screen repainted and
+                  ;; replayed its sound every frame.
+                  (set! *st* (drain-journal! *st*))
+                  (set! *dirty* #f))
+                #f)
+            ;; A key LEFT the match this frame (ESC/RETURN to the title):
+            ;; the journal still drains — `drain-journal!` is the one place
+            ;; facts become sounds and effects, and a fact must not depend
+            ;; on which screen comes next — but the PAINT is the new
+            ;; screen's job. `*dirty*` stays set, so the menu paints the
+            ;; title on the very next frame. Painting the old match here
+            ;; and clearing the flag left the player staring at GAME OVER
+            ;; on a screen that believed it was the title.
             (begin
-              (draw-game! *st*)
-              (drain-journal! *st*)
-              (set! *dirty* #f))
-            #f)))
+              (set! *st* (drain-journal! *st*))
+              #f))))
 
     (define (play-step!)
       (if (phase-playing? *st*)
           (begin
-            (play-frame *st* *dirty*)
-            (set! *dirty* (quit-requested?))
-            (if (or (phase-over? *st*) (phase-won? *st*))
-                (if *settled*
-                    #f
-                    (begin
-                      (set! *settled* #t)
-                      (set! *dirty* #t)
-                      (settle-match! *st*)))
-                (set! *settled* #f)))
-          (result-step!)))
+            (play-frame *st*)
+            (set! *dirty* (quit-requested?)))
+          (result-step!))
+      ;; Settle once, whatever route the terminal state arrived by: it can
+      ;; land inside the frame above, or already sit terminal at frame
+      ;; entry (a scripted or restored match) — a route that used to skip
+      ;; the settle entirely, so no best was recorded and no rung marked.
+      (if (or (phase-over? *st*) (phase-won? *st*))
+          (if *settled*
+              #f
+              (begin
+                (set! *settled* #t)
+                (set! *dirty* #t)
+                (settle-match! *st*)))
+          (set! *settled* #f)))
 
     ;; The key a live match answers, by phase: steering keys while it runs,
     ;; the onward keys once it is a result.
@@ -802,12 +819,19 @@
                           (show-screen! 'title (title-menu))))
                     (show-screen! 'title (title-menu))))
                ((string=? key "r")
-                (start-match! (config-mode->name (game-config *st*))
+                ;; The replay round trip: config -> name -> options -> config.
+                ;; `config-mode->name` spells the name the *menus* use — a
+                ;; string — but `start-match!` validates against the domain's
+                ;; closed symbol set, so the name crosses back as a symbol.
+                ;; A raw string here reads as an unknown mode and the guard
+                ;; dumps the player at the title with only a console message.
+                (start-match! (string->symbol (config-mode->name (game-config *st*)))
                               (config-options (game-config *st*))
                               *origin* *challenge* *playing-key* *playing-index*))
                ((string=? key "escape")
                 (show-screen! 'title (title-menu))
                 (sfx! "pause"))
+               ((string=? key "q") (quit!))
                (else #f)))
         ;; A paused match: resume, replay, or leave.
         ((phase-paused? *st*)
@@ -822,13 +846,13 @@
                ((string=? key "escape")
                 (show-screen! 'title (title-menu))
                 (sfx! "pause"))
+               ((string=? key "q") (quit!))
                (else #f)))
         ;; A live match: the keymap owns it.
         (else
          (let ((cmd (key->command key)))
            (if cmd
                (let ((r (apply-command *st* cmd)))
-                 (sfx-command! cmd)
                  (if (result-ok? r) (set! *st* (ok-value r)) #f)
                  (set! *dirty* #t))
                #f)))))
@@ -840,6 +864,21 @@
         ((mode) (menu-key! key))
         ((level) (menu-key-with-level! key))
         ((play) (play-key! key))
+        (else #f)))
+
+    ;; The host pumps key-repeat for held keys; the menus honor it for the
+    ;; MOVEMENT keys only — a held RETURN must not start match after match,
+    ;; and a held ESC must not fly back through every screen at once.
+    (define (dispatch-repeat! key)
+      (case *screen*
+        ((title campaign mode)
+         (if (or (string=? key "up") (string=? key "down"))
+             (menu-key! key)
+             #f))
+        ((level)
+         (if (member key '("left" "right" "up" "down"))
+             (menu-key-with-level! key)
+             #f))
         (else #f)))
 
     (define (menu-step!)
@@ -854,12 +893,18 @@
                   ((quit) (quit!))
                   ((key-down)
                    (dispatch-key! (cadr (assq key: (car rest)))))
+                  ((key-repeat)
+                   (dispatch-repeat! (cadr (assq key: (car rest)))))
                   (else #f))
                 (loop (cdr rest)))))
-        (if *dirty*
+        (if (and *dirty* (not (eq? *screen* 'play)))
             (begin
               (draw-screen!)
               (set! *dirty* (quit-requested?)))
+            ;; A pick started a match this frame: the screen is the match's
+            ;; now, and the live path paints it — its `*dirty*` is still
+            ;; set. Painting the menu shape here flashed one frame of
+            ;; empty shell between the menus and the board.
             #f)))
 
     (define (arcade-step!)
@@ -899,7 +944,20 @@
                                (list (list 'starting-level *level*))
                                'free #f #f #f))
                 (autostart
-                 (start-match! 'marathon '() 'free #f #f #f))
+                 ;; A bare --autostart is the classic marathon — but a
+                 ;; --level next to it is still a wish the player made,
+                 ;; not a flag to drop.
+                 (start-match! 'marathon
+                               (if level
+                                   (list (list 'starting-level level))
+                                   '())
+                               'free #f #f #f))
                 (else
+                 (if mode
+                     (begin
+                       (display "--mode ignored without --autostart: ")
+                       (display mode)
+                       (newline))
+                     #f)
                  (show-screen! 'title (title-menu)))))))
 

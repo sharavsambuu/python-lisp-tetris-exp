@@ -140,14 +140,27 @@
 
 
 
-    ;; One gravity pull: down a row, or — if the floor is there — the lock
-    ;; track. This is the arrow gravity and the soft-drop key share.
-    (define (soft-fall state)
-      (let ((r (try-shift state 0 1)))
-        (if (result-ok? r)
-            (let ((s* (ok-value r)))
-              (ok (game-with s* score: (+ (game-score s*) (drop-points 'soft 1)))))
+    ;; One pull of descent: down a row, or — if the floor is there — the
+    ;; lock track. `loud?` decides whether the move is journaled: a
+    ;; player's soft-drop keypress is a fact worth a blip, but gravity is
+    ;; the clock's work, and an idle match should be silent.
+    (define (fall-by-one state loud?)
+      (let* ((p (game-active state))
+             (ny (+ (falling-y p) 1)))
+        (if (fits-at? state (falling-name p) (falling-rot p)
+                      (falling-x p) ny)
+            (let ((s* (game-with state
+                                 active: (make-falling (falling-name p)
+                                                       (falling-x p) ny
+                                                       (falling-rot p))
+                                 score: (+ (game-score state)
+                                           (drop-points 'soft 1)))))
+              (ok (if loud? (with-event s* (moved)) s*)))
             (lock-and-spawn state))))
+
+    ;; The soft-drop key's arrow: the shared descent, announced.
+    (define (soft-fall state)
+      (fall-by-one state #t))
 
     ;; Merge the active piece into the board, collapse any full rows, and
     ;; re-level. One arrow: lock is a single indivisible fact of the domain.
@@ -271,7 +284,7 @@
       (let loop ((s state) (i 0))
         (if (or (>= i n) (not (playing? s)))
             (ok s)
-            (result-bind (soft-fall s) (cut loop <> (+ i 1))))))
+            (result-bind (fall-by-one s #f) (cut loop <> (+ i 1))))))
 
     ;; One frame of world time. The bank is updated even when no tick is due,
     ;; so nothing accumulates out of sight — and the match's clock runs while

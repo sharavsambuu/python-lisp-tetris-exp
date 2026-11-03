@@ -122,6 +122,7 @@
         (hud-target            "TARGET ~a/~a"                    "ЗОРИЛТ ~a/~a")
         (hud-garbage           "GARBAGE ~a"                      "ХОГ ~a")
         (hud-combo             "COMBO x~a"                       "КОМБО x~a")
+        (popup-combo           "x~a COMBO"                       "x~a КОМБО")
         (hud-b2b               "BACK-TO-BACK"                    "ТАСРАЛТГҮЙ")
         (hud-keys              "KEYS"                            "ТОВЧУУД")
 

@@ -228,6 +228,60 @@
              (> (host-frame-count) frames-before)))
 
 ;; --------------------------------------------------------------------- ;;
+;;  the combo pop — the run announces itself                                ;;
+;; --------------------------------------------------------------------- ;;
+
+;; Tetris-battle drama: a run of clears pops a big announcement over the
+;; well and raises the speaker's pitch per link. Two crafted singles, then
+;; two frames: the first drains the journal (the facts arm the popup and
+;; the tier beep), the second paints what they armed.
+(tk-section "combo pop")
+
+(boot-fresh!)
+(start-match! 'marathon '() 'free #f #f #f)
+(set! *ai* #f)
+(define (result-unwrap-or r default)
+  (if (result-ok? r) (ok-value r) default))
+(let craft ((i 0))
+  (if (< i 2)
+      (begin
+        (let* ((b (let loop ((bd (make-board)) (ys '(19)))
+                    (if (null? ys)
+                        bd
+                        (loop (board-place bd 'i
+                                           (map (lambda (x) (cons x (car ys)))
+                                                (filter (lambda (x) (not (= x 2)))
+                                                        (iota matrix-width))))
+                              (cdr ys))))))
+          (set! *st* (game-with *st* board: b active: (make-falling 'i 3 0 1))))
+        (let drive ((j 0))
+          (let* ((p (game-active *st*))
+                 (done (and (= (falling-x p) 0) (= (falling-rot p) 1))))
+            (cond (done
+                   (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+                  ((> j 8) (error "could not steer the crafted piece"))
+                  (else
+                   (if (not (= (falling-rot p) 1))
+                       (set! *st* (result-unwrap-or (apply-command *st* (rotate-cw)) *st*))
+                       (set! *st* (result-unwrap-or (apply-command *st* (left)) *st*)))
+                   (drive (+ j 1))))))
+        (craft (+ i 1)))
+      #f))
+(host-clock! 16 2)
+(host-run-frames! 2)
+(tk-assert "the combo popup announced the run"
+           (any (lambda (s) (string-contains? s "x2 COMBO")) (host-text-strings)))
+(tk-assert "the popup painted big, not HUD-small"
+           (any (lambda (e)
+                  (and (eq? (car e) 'text)
+                       (string-contains? (list-ref (cdr e) 2) "x2 COMBO")
+                       (> (list-ref (cdr e) 3) 24)))
+                *host-log*))
+(tk-assert "the run raised the speaker's pitch"
+           (member "combo-2" (host-sfx-names)))
+(boot-fresh!)
+
+;; --------------------------------------------------------------------- ;;
 ;;  pausing paints the veil — the bug this suite exists to keep dead         ;;
 ;; --------------------------------------------------------------------- ;;
 

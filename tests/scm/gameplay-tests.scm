@@ -324,6 +324,56 @@
           (policy-garbage-row (scoring-policy-for 'cheese)) 200)
 
 ;; --------------------------------------------------------------------- ;;
+;;  the combo run — announced from the second link                          ;;
+;; --------------------------------------------------------------------- ;;
+
+;; A combo is a RUN: the first clear of a chain pays nothing and says
+;; nothing; the second journals (combo 2), the third (combo 3) — the facts
+;; the speaker's pitch and the popup's size read.
+(tk-section "combo run")
+
+(boot-into! 'marathon '())
+(set! *ai* #f)
+
+;; One crafted single: row 19 with a hole in column two, a vertical I
+;; dropped into the hole — on a clean board, so runs compose.
+(define (craft-single!)
+  (let* ((hole 2)
+         (b (let loop ((bd (make-board)) (ys '(19)))
+              (if (null? ys)
+                  bd
+                  (loop (board-place bd 'i
+                                     (map (lambda (x) (cons x (car ys)))
+                                          (filter (lambda (x) (not (= x hole)))
+                                                  (iota matrix-width))))
+                        (cdr ys))))))
+    (set! *st* (game-with *st* board: b active: (make-falling 'i 3 0 1))))
+  (let drive ((i 0))
+    (let* ((p (game-active *st*))
+           (done (and (= (falling-x p) 0) (= (falling-rot p) 1))))
+      (cond (done
+             (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+            ((> i 8) (error "could not steer the crafted piece"))
+            (else
+             (if (not (= (falling-rot p) 1))
+                 (set! *st* (result-unwrap-or (apply-command *st* (rotate-cw)) *st*))
+                 (set! *st* (result-unwrap-or (apply-command *st* (left)) *st*)))
+             (drive (+ i 1)))))))
+
+(craft-single!)
+(tk-assert "the first link announces no combo"
+           (not (memq 'combo (map tag-of (game-journal *st*)))))
+(craft-single!)
+(tk-assert "the second link announces the run"
+           (memq 'combo (map tag-of (game-journal *st*))))
+(tk-check "the run's depth is two"
+          (variant-match (find (lambda (e) (eq? (tag-of e) 'combo))
+                               (game-journal *st*))
+            ((combo n) n)
+            (else #f))
+          2)
+
+;; --------------------------------------------------------------------- ;;
 ;;  a sprint win, steered by the built-in AI, through the real loop          ;;
 ;; --------------------------------------------------------------------- ;;
 

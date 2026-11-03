@@ -67,6 +67,7 @@
           hold-refused
           cleared
           scored
+          combo
           level-up
           victory
           restarted
@@ -140,6 +141,7 @@
                           (hold-refused)
                           (cleared rows)
                           (scored points)
+                          (combo n)
                           (level-up n)
                           (victory)
                           (restarted)

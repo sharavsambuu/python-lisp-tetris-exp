@@ -122,6 +122,10 @@
     (define *hold-pulse-ms* 0)
     (define *fx-t* 0.0)
     (define *danger-paint-ms* 0)
+    ;; The combo popup: the run announcing itself over the well — which
+    ;; run (a fact's payload) and how long the pop still owes.
+    (define *combo-ms* 0)
+    (define *combo-n* 0)
 
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
@@ -129,6 +133,14 @@
     (define (view-flash! rgb ms)
       (set! *flash-rgb* rgb)
       (set! *flash-ms* (max *flash-ms* ms)))
+
+    ;; The conductor awards a combo run: the popup pops in big, escalates
+    ;; with the run's length, and fades — a five-link run shouts louder
+    ;; and longer than a two.
+    (define *combo-pop-ms* 900)
+    (define (view-combo-pop! n)
+      (set! *combo-n* n)
+      (set! *combo-ms* (+ *combo-pop-ms* (* 100 (min 4 (- n 1))))))
 
     ;; The conductor awards a clear: the beam paints the cleared rows for as
     ;; long as the flash burns — one flash length per line, so a tetris's
@@ -153,6 +165,8 @@
       (set! *beam-rows* '())
       (set! *beam-ms* 0)
       (set! *hold-pulse-ms* 0)
+      (set! *combo-ms* 0)
+      (set! *combo-n* 0)
       (set! *danger-paint-ms* 0))
 
     ;; Mix two rgb lists: t=0 answers a, t=1 answers b, between — a blend.
@@ -192,6 +206,7 @@
       (or (> *flash-ms* 0)
           (> *beam-ms* 0)
           (> *hold-pulse-ms* 0)
+          (> *combo-ms* 0)
           (not (= *score-shown* (game-score st)))
           (and (danger-tint? st) (<= *danger-paint-ms* 0))))
 
@@ -208,6 +223,7 @@
       (if (> *hold-pulse-ms* 0)
           (set! *hold-pulse-ms* (max 0 (- *hold-pulse-ms* dt)))
           #f)
+      (set! *combo-ms* (max 0 (- *combo-ms* dt)))
       ;; The ticker chases the real score: an eighth of the gap per frame,
       ;; at least one, so a small gain still visibly rolls.
       (let ((target (game-score st)))
@@ -513,6 +529,23 @@
             (if *show-ghost* (draw-ghost! st) #f)
             (draw-cells! (active-cells st)
                          (piece-color (falling-name (game-active st)))))
+          #f)
+      ;; The combo popup, over everything: pops in big during the first
+      ;; fifth of its life, then fades toward the veil's dark. The type
+      ;; escalates with the run — a five-link combo shouts larger than a
+      ;; two — so the size itself reads how deep the run is.
+      (if (> *combo-ms* 0)
+          (let* ((total (+ *combo-pop-ms* (* 100 (min 4 (- *combo-n* 1)))))
+                 (t (- 1.0 (/ *combo-ms* total)))
+                 (pop (max 0.0 (- 1.0 (* t 5.0))))
+                 (base (+ 20 (* 6 (min 4 (- *combo-n* 1)))))
+                 (size (min 44 (exact (round (* base (+ 1.0 (* 0.6 pop)))))))
+                 (s (tr-fmt 'popup-combo *combo-n*))
+                 (rgb (mix-rgb '(16 16 24) (color accent:) (max 0.0 (- 1.0 (* t t)))))
+                 (x (centered-x (lay board-x:)
+                                (* matrix-width (lay cell:))
+                                s size)))
+            (draw-text! x (+ (lay board-y:) (cell-size) 4) s size rgb))
           #f))
 
     (define (draw-game! st)

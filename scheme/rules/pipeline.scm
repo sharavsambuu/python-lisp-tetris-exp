@@ -255,7 +255,14 @@
                        (if (> level* (game-level s2))
                            (with-event s3 (level-up level*))
                            s3)
-                       (list (cleared rows) (scored points)))))))))))
+                       ;; The combo fact announces the RUN, not the clear:
+                       ;; from the second consecutive clear on — the first
+                       ;; paid nothing, this one pays the chain. The
+                       ;; speaker's pitch and the popup's size read it.
+                       (append (list (cleared rows) (scored points))
+                               (if (>= (game-combo s3) 2)
+                                   (list (combo (game-combo s3)))
+                                   '())))))))))))
 
     ;; Draw the next piece. The one way a game ends: a spawn that does not
     ;; fit. That is not a refusal — it is the over phase, announced in the

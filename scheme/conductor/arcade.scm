@@ -98,6 +98,20 @@
         (cleared   "clear")
         (restarted "start")))
 
+    ;; A four-line clear headlines with the fanfare, not the plain blip —
+    ;; the speaker's one escalation the *size* of the clear earns.
+    (define (headline-kind tag ev fallback)
+      (if (and (eq? tag 'cleared)
+               (variant-match ev ((cleared rows) (= (length rows) 4))
+                                (else #f)))
+          "tetris"
+          fallback))
+
+    ;; The tier pitch a run's depth earns, capped so a ten-link run stays
+    ;; a chord, not a siren.
+    (define (combo-sfx n)
+      (string-append "combo-" (number->string (max 2 (min 5 n)))))
+
     (define (sfx-journal! events)
       (let loop ((order *sfx-fact*))
         (if (null? order)
@@ -105,7 +119,17 @@
             (let ((hit (find (lambda (ev) (eq? (tag-of ev) (car (car order))))
                              events)))
               (if hit
-                  (sfx! (cadr (car order)))
+                  (begin
+                    (sfx! (headline-kind (car (car order)) hit
+                                         (cadr (car order))))
+                    ;; The combo announcer is the one overlay: a clear
+                    ;; frame headlines with the clear, and the run's tier
+                    ;; beep rides on top of it.
+                    (for-each (lambda (ev)
+                                (variant-match ev
+                                  ((combo n) (sfx! (combo-sfx n)))
+                                  (else #f)))
+                              events))
                   (loop (cdr order)))))))
 
     ;; The per-event sounds that are not in the ranking (moves, rotations…)
@@ -118,6 +142,9 @@
         ((locked _) (sfx! "lock"))
         ((hold-swapped) (sfx! "hold"))
         ((hold-refused) (sfx! "denied"))
+        ;; The combo runs on top of the clear blip, like an announcer over
+        ;; the SFX — this arm answers the frames with no ranked fact.
+        ((combo n) (sfx! (combo-sfx n)))
         (else #f)))
 
     ;; Play the journal, then hand back the state with the paper trail
@@ -173,6 +200,7 @@
             (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
            ((hold-swapped) (view-hold-pulse!))
            ((hold-refused) (fx-thud! 1.0))
+           ((combo n) (view-combo-pop! n))
            ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
            ((victory) (view-flash! '(230 230 240) 220))
            ((game-over) (view-flash! '(160 40 40) 260))

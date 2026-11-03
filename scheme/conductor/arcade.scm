@@ -208,7 +208,13 @@
                                   mode: 'marathon options: '())))
         (set! *r-lock-count* 0)
         (let* ((id (symbol->string (persona-id persona)))
-               (entry (assoc id (profile-ref *profile* "leashes" '())))
+               ;; The profile can be absent (a boot that refused every
+               ;; document): a missing memory defaults the shelf, it
+               ;; never refuses the fight.
+               (leashes (if *profile*
+                            (profile-ref *profile* "leashes" '())
+                            '()))
+               (entry (assoc id leashes))
                (band (if entry (cdr entry) (persona-band persona))))
           (set! *leash* (make-leash band: band))
           (set! *r-throttle* 1)
@@ -342,27 +348,30 @@
             #f)
         (sfx! (if won "victory" "over"))))
 
-    ;; One leash step: read the gap, ask the core for a throttle, and
-    ;; speak only when there is something to say — past the cooldown,
-    ;; past the threshold. The adjustment lands on the AI's side only:
-    ;; the budget this frame's search spends, and the gravity its well
-    ;; falls by. The player's side is never read back into the player.
+    ;; One leash step. The cooldown gates BEFORE the probe: the gap
+    ;; costs two `pressure` reads (~17 ms measured — the interpreter's
+    ;; cell walks), and the leash speaks at most twice a second, so
+    ;; the reads ride the cadence instead of the frame. When the
+    ;; cooldown expires and the change is under the threshold, the
+    ;; clock still advances: a slow drift waits for the next tick of
+    ;; the cadence, and the frames between stay free.
     (define (duel-direct!)
       (if (and *leash*
                (phase-playing? (duel-left *duel*))
                (phase-playing? (duel-right *duel*)))
-          (let* ((clock (game-clock (duel-left *duel*)))
-                 (gap (duel-gap (game-lines (duel-left *duel*))
-                                (game-lines (duel-right *duel*))
-                                (pressure (duel-left *duel*))
-                                (pressure (duel-right *duel*))))
-                 (m (leash-throttle *leash* gap)))
-            (if (and (>= (- clock *leash-last*) *leash-cooldown*)
-                     (>= (abs (- m *r-throttle*)) *leash-threshold*))
-                (begin
+          (let ((clock (game-clock (duel-left *duel*))))
+            (if (>= (- clock *leash-last*) *leash-cooldown*)
+                (let* ((gap (duel-gap (game-lines (duel-left *duel*))
+                                      (game-lines (duel-right *duel*))
+                                      (pressure (duel-left *duel*))
+                                      (pressure (duel-right *duel*))))
+                       (m (leash-throttle *leash* gap)))
                   (set! *leash-last* clock)
-                  (set! *r-throttle* m)
-                  (set! *r-pace* (leash-pace *leash* m)))
+                  (if (>= (abs (- m *r-throttle*)) *leash-threshold*)
+                      (begin
+                        (set! *r-throttle* m)
+                        (set! *r-pace* (leash-pace *leash* m)))
+                      #f))
                 #f))
           #f))
 
@@ -416,7 +425,17 @@
         (if (and (duel-over? *duel*) (not *settled*))
             (settle-duel!)
             #f)
-        (if (or *dirty* (view-busy? (duel-left *duel*)))
+        (if (or *dirty*
+                ;; The world moved: a live duel repaints every frame —
+                ;; the right well falls and steers whether or not the
+                ;; player's side is animating, and a repaint gate that
+                ;; only watched the LEFT side's effects froze the
+                ;; opponent's board on screen between the player's own
+                ;; events. Cached boards make the frame cheap; the
+                ;; gate's job is only to spare the paused and decided
+                ;; screens.
+                (and (not *duel-paused*) (not (duel-over? *duel*)))
+                (view-busy? (duel-left *duel*)))
             (begin
               (draw-duel! *duel* *persona*)
               (set! *dirty* #f))
@@ -551,14 +570,18 @@
     ;; threshold, after the cooldown. The decision is journaled like any
     ;; other fact, so a match's record carries the director's side of the
     ;; story too.
+    ;; One director step. The cooldown gates BEFORE the probe — same
+    ;; discipline as the duel's leash: the pressure read is a cell
+    ;; walk, and the director speaks at most once a second, so the
+    ;; read rides the cadence, not the frame.
     (define (direct! st)
-      (let ((m (director-pace *director-config* (pressure st))))
-        (if (and (>= (- (game-clock st) *director-last*) *director-cooldown*)
-                 (>= (abs (- m (game-pace st))) 0.05))
-            (begin
-              (set! *director-last* (game-clock st))
-              (with-event (game-with st pace: m) (paced m)))
-            st)))
+      (if (>= (- (game-clock st) *director-last*) *director-cooldown*)
+          (let ((m (director-pace *director-config* (pressure st))))
+            (set! *director-last* (game-clock st))
+            (if (>= (abs (- m (game-pace st))) 0.05)
+                (with-event (game-with st pace: m) (paced m))
+                st))
+          st))
 
     ;; One frame of the live match. The order is the discipline: events
     ;; first (a key press lands *before* the gravity of the frame it

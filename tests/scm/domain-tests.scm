@@ -955,5 +955,28 @@
 (check (game-pace (new-game)) 1)
 (check (game-pace (game-with (new-game) pace: 1.75)) 1.75)
 
+;; The heights form of the landing probe agrees with the scan form:
+;; same row, piece after piece, on a board the AI has been stacking.
+;; The scan is the definition; the heights form is what the painter
+;; and the planner can afford per frame.
+(let loop ((i 0) (s (new-game)))
+  (if (>= i 40)
+      (assert "the heights ghost matches the scan ghost" #t)
+      (let* ((r (apply-command s (hard-drop)))
+             (s* (if (result-ok? r) (ok-value r) s)))
+        (when (game-active s*)
+          (let ((hts (column-heights (game-board s*))))
+            (for-each
+             (lambda (x)
+               (for-each
+                (lambda (rot)
+                  (let ((scan (landing-y-at s* x rot))
+                        (fast (landing-y/hts s* hts x rot)))
+                    (when (and scan fast)
+                      (check fast scan))))
+                (list 0 1 2 3)))
+             (list 0 3 5 9))))
+        (loop (+ i 1) s*))))
+
 (display "all domain tests passed")
 (newline)

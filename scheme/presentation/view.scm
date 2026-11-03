@@ -38,7 +38,41 @@
             (cons duel-board-x: 610)
             (cons duel-panel-x: 896)))
 
-    (define (lay k) (cdr (assq k layout)))
+    ;; `lay` and `color` are assq walks over constant tables — and they
+    ;; are called per cell, per shape, per text, on every repaint:
+    ;; ~1.5k walks a duel frame, measured. One-entry memos: the hot
+    ;; keys repeat within a frame (cell:, board-x:, text:), and a miss
+    ;; is the walk the code always paid. The tables never change, so
+    ;; the memos never go stale.
+    (define *lay-memo* (cons #f #f))
+    (define (lay k)
+      (if (eq? (car *lay-memo*) k)
+          (cdr *lay-memo*)
+          (let ((v (cdr (assq k layout))))
+            (set-car! *lay-memo* k)
+            (set-cdr! *lay-memo* v)
+            v)))
+
+    (define *color-memo* (cons #f #f))
+    (define (color k)
+      (if (eq? (car *color-memo*) k)
+          (cdr *color-memo*)
+          (let ((v (cdr (assq k colors))))
+            (set-car! *color-memo* k)
+            (set-cdr! *color-memo* v)
+            v)))
+
+    ;; The piece's color is a string->keyword conversion plus the walk,
+    ;; paid per settled cell on a board rebuild — the memo keeps the
+    ;; last name, and piece names cluster (four cells of one piece).
+    (define *piece-color-memo* (cons #f #f))
+    (define (piece-color name)
+      (if (eq? (car *piece-color-memo*) name)
+          (cdr *piece-color-memo*)
+          (let ((v (color (string->keyword (symbol->string name)))))
+            (set-car! *piece-color-memo* name)
+            (set-cdr! *piece-color-memo* v)
+            v)))
 
     (define window-width 640)
     (define window-height 640)
@@ -68,11 +102,6 @@
             (cons dim: '(150 150 165))
             (cons accent: '(90 220 200))
             (cons warn: '(240 120 90))))
-
-    (define (color k) (cdr (assq k colors)))
-
-    (define (piece-color name)
-      (color (string->keyword (symbol->string name))))
 
     ;; The mode's display name: the domain's label is the stable *key* (the
     ;; bests table is keyed by it), the locale map owns the spelling shown.
@@ -217,7 +246,12 @@
       (set! *pop-ms* 0)
       (set! *pop-kind* #f)
       (set! *new-best* #f)
-      (set! *danger-paint-ms* 0))
+      (set! *danger-paint-ms* 0)
+      ;; The caches: keyed by board identity, but a menu between matches
+      ;; must not answer a stale list against a reused layout.
+      (set! *board-rects-cache* '())
+      (set! *stack-top-cache* '())
+      (set! *heights-cache* '()))
 
     ;; Mix two rgb lists: t=0 answers a, t=1 answers b, between — a blend.
     (define (mix-rgb a b t)
@@ -241,8 +275,28 @@
 
     ;; Danger: a live piece with the stack four rows from the ceiling. Purely
     ;; presentational — the rules never read it.
+    ;; The first occupied row, cached against the board's identity for
+    ;; the same reason the rect list is: `stack-top` walks cells, and
+    ;; `view-busy?` asks it every frame. A miss is a board change; a
+    ;; hit is a list walk of four entries.
+    (define *stack-top-cache* '())
+
+    (define (cached-stack-top st)
+      (let ((b (game-board st)))
+        (let hit ((entries *stack-top-cache*))
+          (cond ((null? entries)
+                 (let ((top (stack-top st)))
+                   (set! *stack-top-cache*
+                         (cons (cons b top)
+                               (if (> (length *stack-top-cache*) 4)
+                                   (cdr *stack-top-cache*)
+                                   *stack-top-cache*)))
+                   top))
+                ((eq? (car (car entries)) b) (cdr (car entries)))
+                (else (hit (cdr entries)))))))
+
     (define (danger-tint? st)
-      (and (game-active st) (<= (stack-top st) 3)))
+      (and (game-active st) (<= (cached-stack-top st) 3)))
 
     ;; True while the rail still owes frames: a flash burning, a beam or
     ;; pulse decaying, the ticker short of the real score, or a danger
@@ -340,25 +394,56 @@
     ;; as 200 `draw-rect!` crossings cost ~27ms (the crossing overhead,
     ;; not the paint); batched, ~2ms. The duel doubled the board count,
     ;; and a two-board worst case at the old rate was an 18fps frame.
-    (define (draw-board-at! st ox)
+    ;;
+    ;; The batch bought the crossing; the *build* was the next tax: the
+    ;; flat list is ~200 interpreted iterations per board per repaint,
+    ;; and a duel repaints every frame. Boards are immutable values that
+    ;; change only on a lock, a clear, or garbage — so the flat list is
+    ;; cached against the board's identity (`eq?`, never `equal?`: a
+    ;; deep compare would cost more than the rebuild), plus the origin
+    ;; and the shake, which change the pixels without changing the
+    ;; board. A hit is one host crossing; a miss is the rebuild, and
+    ;; misses are the game's events, not the frames.
+    (define *board-rects-cache* '())
+
+    (define (build-board-rects! st ox)
       (let* ((cell (lay cell:))
              (s (- cell 1))
              (oy (+ (lay board-y:) (shake-offset))))
-        (draw-rects!
-         (let loop ((entries (board-cells (game-board st))) (acc '()))
-           (if (null? entries)
-               (reverse acc)
-               (let* ((e (car entries))
-                      (pos (car e))
-                      (rgb (piece-color (cdr e)))
-                      (x (+ ox (* (car pos) cell) (shake-offset)))
-                      (y (+ oy (* (cdr pos) cell))))
-                 ;; The flat entry, pushed in reverse: (x y w h r g b).
-                 (loop (cdr entries)
-                       (cons (caddr rgb)
-                             (cons (cadr rgb)
-                                   (cons (car rgb)
-                                         (cons s (cons s (cons x (cons y acc))))))))))))))
+        (let loop ((entries (board-cells (game-board st))) (acc '()))
+          (if (null? entries)
+              (reverse acc)
+              (let* ((e (car entries))
+                     (pos (car e))
+                     (rgb (piece-color (cdr e)))
+                     (x (+ ox (* (car pos) cell) (shake-offset)))
+                     (y (+ oy (* (cdr pos) cell))))
+                ;; The flat entry, pushed in reverse: (x y w h r g b).
+                (loop (cdr entries)
+                      (cons (caddr rgb)
+                            (cons (cadr rgb)
+                                  (cons (car rgb)
+                                        (cons s (cons s (cons x (cons y acc)))))))))))))
+
+    (define (board-rects! st ox)
+      (let ((b (game-board st)) (sh (shake-offset)))
+        (let hit ((entries *board-rects-cache*))
+          (cond ((null? entries)
+                 (let ((flat (build-board-rects! st ox)))
+                   (set! *board-rects-cache*
+                         (cons (list b ox sh flat)
+                               (if (> (length *board-rects-cache*) 4)
+                                   (cdr *board-rects-cache*)
+                                   *board-rects-cache*)))
+                   flat))
+                ((and (eq? (car (car entries)) b)
+                      (= (cadr (car entries)) ox)
+                      (= (caddr (car entries)) sh))
+                 (cadddr (car entries)))
+                (else (hit (cdr entries)))))))
+
+    (define (draw-board-at! st ox)
+      (draw-rects! (board-rects! st ox)))
 
     (define (draw-board! st)
       (draw-board-at! st (lay board-x:)))
@@ -373,8 +458,29 @@
     (define (draw-well!)
       (draw-well-at! (lay board-x:)))
 
+    ;; The ghost, from cached column heights: the drop scan costs ~3 ms
+    ;; of interpreted calls and runs every frame on every board — the
+    ;; O(cells) form reads the landing row off the heights, and the
+    ;; heights are cached against the board's identity (a miss is a
+    ;; lock, a clear, or garbage; a hit is an eq? test).
+    (define *heights-cache* '())
+
+    (define (cached-heights st)
+      (let ((b (game-board st)))
+        (let hit ((entries *heights-cache*))
+          (cond ((null? entries)
+                 (let ((hts (column-heights b)))
+                   (set! *heights-cache*
+                         (cons (cons b hts)
+                               (if (> (length *heights-cache*) 4)
+                                   (cdr *heights-cache*)
+                                   *heights-cache*)))
+                   hts))
+                ((eq? (car (car entries)) b) (cdr (car entries)))
+                (else (hit (cdr entries)))))))
+
     (define (draw-ghost-at! st ox)
-      (let ((cells (ghost-cells st)))
+      (let ((cells (ghost-cells/hts st (cached-heights st))))
         (if (null? cells)
             #f
             (draw-cells-at! cells (color ghost:) ox))))

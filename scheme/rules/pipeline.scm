@@ -28,7 +28,9 @@
           step-time
           drop-distance
           landing-y-at
+          landing-y/hts
           ghost-cells
+          ghost-cells/hts
           active-cells
           lock-and-spawn
           lock-active
@@ -60,17 +62,30 @@
     ;;  Pure probes — reads the view and the tests need, no transitions    ;;
     ;; ------------------------------------------------------------------ ;;
 
+    ;; The row test, hoisted: the piece's relative shape is read once
+    ;; from the rotation table, and each candidate row is four
+    ;; `cell-free?` calls — no cell list is built per row. The scan
+    ;; below used to rebuild the shape through `cells-at` for every
+    ;; row of the fall: ~4 ms a ghost, twice a frame in a duel, and
+    ;; the AI's placement probe paid the same tax 40 times a piece.
+    (define (shape-fits-at? b shape x y)
+      (let loop ((cells shape))
+        (cond ((null? cells) #t)
+              ((cell-free? b (+ x (car (car cells))) (+ y (cdr (car cells))))
+               (loop (cdr cells)))
+              (else #f))))
+
     ;; How many rows the active piece can still fall.
     (define (drop-distance state)
       (let ((p (game-active state)))
         (if (not p)
             0
-            (let loop ((d 1))
-              (if (fits-at? state
-                            (falling-name p) (falling-rot p)
-                            (falling-x p) (+ (falling-y p) d))
-                  (loop (+ d 1))
-                  (- d 1))))))
+            (let ((shape (piece-cells (falling-name p) (falling-rot p)))
+                  (b (game-board state)))
+              (let loop ((d 1))
+                (if (shape-fits-at? b shape (falling-x p) (+ (falling-y p) d))
+                    (loop (+ d 1))
+                    (- d 1)))))))
 
     ;; Where the piece would land, as cells — the ghost's shadow.
     (define (ghost-cells state)
@@ -453,13 +468,57 @@
     ;; planner tells an impossible placement from a bad one.
     (define (landing-y-at state x rot)
       (let* ((p (game-active state))
-             (name (falling-name p)))
-        (if (not (fits-at? state name rot x (falling-y p)))
+             (name (falling-name p))
+             (shape (piece-cells name rot))
+             (b (game-board state)))
+        (if (not (shape-fits-at? b shape x (falling-y p)))
             #f
             (let loop ((y (falling-y p)))
-              (if (fits-at? state name rot x (+ y 1))
+              (if (shape-fits-at? b shape x (+ y 1))
                   (loop (+ y 1))
                   y)))))
+
+    ;; The same answers in O(cells) instead of O(rows × cells): the
+    ;; landing row reads straight off the settled column heights — the
+    ;; piece rests at the lowest `y` that keeps every cell above its
+    ;; column's top occupied row. `hts` is `(column-heights board)`;
+    ;; the caller caches it against the board, because the scan form
+    ;; costs ~3 ms of interpreted calls and the view scans every frame
+    ;; (the ghost) and the planner 40 times a piece. The precondition
+    ;; is unchanged: #f when the placement does not fit where the
+    ;; piece is.
+    (define (landing-y/hts state hts x rot)
+      (let* ((p (game-active state))
+             (name (falling-name p))
+             (shape (piece-cells name rot)))
+        (if (not (shape-fits-at? (game-board state) shape x (falling-y p)))
+            #f
+            (let ((topocc (lambda (cx) (- matrix-height (vector-ref hts (+ x cx))))))
+              (let loop ((cells shape) (y #f))
+                (cond ((null? cells) y)
+                      (else
+                       (let ((cand (- (topocc (car (car cells)))
+                                      1 (cdr (car cells)))))
+                         (loop (cdr cells)
+                               (if (or (eq? y #f) (< cand y)) cand y))))))))))
+
+    ;; Where the piece would land, as cells — the ghost's shadow, from
+    ;; precomputed heights. A piece that does not fit where it stands
+    ;; (a transient the scan form never met, because it never asked)
+    ;; draws no ghost rather than poisoning the arithmetic with #f.
+    (define (ghost-cells/hts state hts)
+      (let ((p (game-active state)))
+        (if (not p)
+            '()
+            (let ((landing (landing-y/hts state hts
+                                          (falling-x p)
+                                          (falling-rot p))))
+              (if (eq? landing #f)
+                  '()
+                  (cells-at (falling-name p) (falling-rot p)
+                            (falling-x p)
+                            (+ (falling-y p)
+                               (- landing (falling-y p)))))))))
 
     ;; ------------------------------------------------------------------ ;;
     ;;  The dispatcher — every command onto its track                      ;;

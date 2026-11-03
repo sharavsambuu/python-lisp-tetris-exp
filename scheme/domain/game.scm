@@ -45,6 +45,7 @@
           game-combo
           game-b2b
           game-clock
+          game-pace
           game-journal
           game-with
           phase-playing?
@@ -72,6 +73,7 @@
           level-up
           victory
           restarted
+          paced
           game-over
           with-event
           with-events
@@ -147,15 +149,20 @@
                           (level-up n)
                           (victory)
                           (restarted)
+                          (paced n)
                           (game-over))
 
     ;; The aggregate, as one flat record. `config` is the match recipe the
     ;; game plays under; `combo` and `b2b` are the scoring chain's state;
     ;; `clock` is the milliseconds the match has been live (an ultra's fuel
-    ;; gauge, and every mode's stopwatch).
+    ;; gauge, and every mode's stopwatch); `pace` is the multiplier the
+    ;; director bends the gravity curve by — 1 plays the curve untouched,
+    ;; below 1 falls faster, above 1 falls slower. A field of the record on
+    ;; purpose: the pacing a match plays under is part of the match's
+    ;; value, so a replay replays the director's decisions too.
     (define-record-type game
       (make-game phase board active hold can-hold bag score lines level bank
-                 config combo b2b clock journal)
+                 config combo b2b clock pace journal)
       game?
       (phase game-phase)
       (board game-board)
@@ -171,6 +178,7 @@
       (combo game-combo)
       (b2b game-b2b)
       (clock game-clock)
+      (pace game-pace)
       (journal game-journal))
 
     ;; The updater: every field defaults to the current value. A transition
@@ -190,8 +198,9 @@
                         (combo: co (game-combo s))
                         (b2b: bb (game-b2b s))
                         (clock: cl (game-clock s))
+                        (pace: pc (game-pace s))
                         (journal: j (game-journal s)))
-      (make-game p b a h c g sc ln lv bk cf co bb cl j))
+      (make-game p b a h c g sc ln lv bk cf co bb cl pc j))
 
     ;; Journal one event, newest first.
     (define (with-event s ev)
@@ -240,6 +249,7 @@
                      0
                      #f
                      0
+                     1
                      '()))))
 
     ;; A game that is already falling: what the conductor boots into, and what

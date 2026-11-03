@@ -359,7 +359,8 @@
           (let-values (((bank ticks)
                         (advance-bank (game-bank state)
                                       dt
-                                      (drop-interval (game-level state)))))
+                                      (paced-interval (game-level state)
+                                                      (game-pace state)))))
             (result-bind
              (if (= ticks 0)
                  (ok state)
@@ -397,6 +398,7 @@
                         combo: 0
                         b2b: #f
                         clock: 0
+                        pace: 1
                         journal: '())
              (restarted))))))
 

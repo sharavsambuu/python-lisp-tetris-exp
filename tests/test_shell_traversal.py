@@ -25,7 +25,7 @@ from lisp import install_primitives, load_lisp, make_env, run  # noqa: E402
 from lisp.types import NIL, intern, intern_keyword  # noqa: E402
 
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
-           "domain/modes", "domain/game", "domain/plan", "rules/commands",
+           "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
            "rules/pipeline", "content/campaign", "content/locale", "presentation/view",
            "conductor/effects", "conductor/screens", "conductor/input",

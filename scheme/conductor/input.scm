@@ -59,6 +59,12 @@
                 (sfx! "menu-move")
                 (set! *dirty* #t)   ; the toggle must show at once
                 st)
+               ((string=? key "d")
+                (set! *director* (not *director*))
+                (set! *director-last* 0)   ; a fresh turn of the cooldown
+                (sfx! "menu-move")
+                (set! *dirty* #t)   ; the toggle must show at once
+                st)
                ((string=? key "g")
                 (show-ghost! (not (show-ghost?)))
                 (sfx! "menu-move")

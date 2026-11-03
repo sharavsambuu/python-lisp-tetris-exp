@@ -34,7 +34,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
-        (tetris plan) (tetris campaign) (tetris locale)
+        (tetris plan) (tetris telemetry) (tetris director) (tetris campaign) (tetris locale)
         (tetris commands) (tetris gravity) (tetris rules))
   (begin
     ;; ---------------------------------------------------------------- ;;
@@ -73,6 +73,15 @@
     ;; The AI the "A" key turns on. The same search as the one-ply library,
     ;; so watching the arcade play is watching that arithmetic again.
     (define *weights* (weights 2.0 2.5 0.5 0.6))
+
+    ;; The director the "D" key turns on. Its decision core is the pure
+    ;; arithmetic of (tetris director); the edge owns the loop around it —
+    ;; on/off, the knobs, and the cooldown memory (the clock reading of
+    ;; the last adjustment, so the pace speaks slowly, not every frame).
+    (define *director* #f)
+    (define *director-config* (make-director))
+    (define *director-last* 0)
+    (define *director-cooldown* 1000)  ;; ms of match clock between adjustments
     ;; ---------------------------------------------------------------- ;;
     ;;  The match — start, finish, the ladder walk                         ;;
     ;; ---------------------------------------------------------------- ;;
@@ -101,6 +110,7 @@
           (set! *dirty* #t)
           (set! *settled* #f)
           (set! *screen* 'play)
+          (set! *director-last* 0)   ; the cooldown restarts with the match
           (reset-ai!)
           (view-reset!)
           (sfx! "start"))))
@@ -265,6 +275,20 @@
                 (set! *plan-ready* #t))))
           (when *plan-ready*
             (steer-to! *st* *plan-x* *plan-rot*)))))
+    ;; One director step: read the pressure, ask the core for a pace, and
+    ;; speak only when there is something to say — a change past the
+    ;; threshold, after the cooldown. The decision is journaled like any
+    ;; other fact, so a match's record carries the director's side of the
+    ;; story too.
+    (define (direct! st)
+      (let ((m (director-pace *director-config* (pressure st))))
+        (if (and (>= (- (game-clock st) *director-last*) *director-cooldown*)
+                 (>= (abs (- m (game-pace st))) 0.05))
+            (begin
+              (set! *director-last* (game-clock st))
+              (with-event (game-with st pace: m) (paced m)))
+            st)))
+
     ;; One frame of the live match. The order is the discipline: events
     ;; first (a key press lands *before* the gravity of the frame it
     ;; happened in) — and the state the events produced is SAVED, or the
@@ -279,6 +303,7 @@
              (evs (poll-events!)))
         (set! *st* (apply-events st evs))
         (ai-step!)
+        (when *director* (set! *st* (direct! *st*)))
         (let-values (((st* time-moved) (step-time-v *st* dt)))
           (set! *st* st*)
           (view-fx-step! dt *st*)
@@ -443,10 +468,12 @@
               (mode (opt 'mode))
               (level (opt 'level))
               (ai (opt 'ai))
+              (director (opt 'director))
               (autostart (opt 'autostart))
               (locale (opt 'locale)))
           (if seed (set! *seed* seed) #f)
           (if ai (set! *ai* #t) #f)
+          (if director (set! *director* #t) #f)
           (if locale (set-locale! (string->symbol locale)) #f)
           (cond ((and autostart mode)
                  (set! *mode* (string->symbol mode))

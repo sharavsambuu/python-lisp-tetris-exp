@@ -37,7 +37,7 @@ from lisp import load_lisp, run  # noqa: E402
 import host.pygame_host as ph  # noqa: E402
 
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
-           "domain/modes", "domain/game", "domain/plan", "rules/commands",
+           "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
            "rules/pipeline", "content/campaign", "content/locale",
            "presentation/view",

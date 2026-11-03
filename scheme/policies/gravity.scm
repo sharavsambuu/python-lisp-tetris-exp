@@ -9,6 +9,7 @@
 (define-library (tetris gravity)
   (import (scheme base) (srfi 89))
   (export drop-interval
+          paced-interval
           advance-bank)
 
   (begin
@@ -23,8 +24,19 @@
     ;; is not. This file owns the gravity curve; the host owns the repeat
     ;; clock; the conductor's ``repeat-able`` table (``conductor/input.scm``)
     ;; decides which keys repeat. Tune the three together.
-    (define* (drop-interval level (base: base 900) (step: step 70) (floor: floor-ms 60))
+
+    ;; The curve's floor, shared with the paced interval below.
+    (define curve-floor 60)
+
+    (define* (drop-interval level (base: base 900) (step: step 70) (floor: floor-ms curve-floor))
       (max floor-ms (- base (* step (- level 1)))))
+
+    ;; The level's interval under a pace multiplier — the one knob the
+    ;; director turns. The pace bends the curve (below 1 falls faster,
+    ;; above 1 falls slower) and the floor still holds: a director can
+    ;; never pace the well faster than one row a tick.
+    (define (paced-interval level pace)
+      (max curve-floor (* pace (drop-interval level))))
 
     ;; One frame of banking: add the frame's dt to the bank, and answer the
     ;; new bank together with how many whole ticks it now pays for. The

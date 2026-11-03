@@ -99,6 +99,7 @@ def test_domain_modules_are_pure_r7rs_libraries():
     pure = [
         "domain/geometry.scm", "domain/board.scm", "domain/bag.scm",
         "domain/modes.scm", "domain/game.scm", "domain/plan.scm",
+        "domain/telemetry.scm", "domain/director.scm",
         "rules/commands.scm", "rules/kicks.scm",
         "rules/scoring.scm", "policies/gravity.scm", "rules/pipeline.scm",
         "core/rop.scm", "content/campaign.scm", "content/locale.scm",

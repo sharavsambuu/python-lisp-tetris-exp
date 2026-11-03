@@ -15,6 +15,8 @@
 (load "domain/modes")
 (load "domain/game")
 (load "domain/plan")
+(load "domain/telemetry")
+(load "domain/director")
 
 (load "rules/commands")
 (load "rules/kicks")

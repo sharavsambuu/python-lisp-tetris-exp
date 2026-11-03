@@ -63,6 +63,12 @@ smaller game in this style, and every technique will be something you have
 | 15 | [The moving edge](15-game-animations.md) | The animation rail dissected pop by pop, escalation with ceilings, the repaint gate answers visibility, type scales text never |
 | 16 | [The mixing desk](16-game-sound.md) | Generated tones as table rows, the ranking mix, the announcer overlay, escalation without a siren, silence as a decision |
 
+### Part VI — The loop that watches (closing the second loop)
+
+| # | Chapter | You learn |
+|---|---------|-----------|
+| 17 | [The director](17-the-director.md) | Telemetry probes with documented ranges, the pressure band, pacing as a field of the match, A/B runs under a seed |
+
 
 ## What the root README flexes → where the series teaches it
 

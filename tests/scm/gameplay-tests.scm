@@ -16,6 +16,8 @@
 (load "domain/modes")
 (load "domain/game")
 (load "domain/plan")
+(load "domain/telemetry")
+(load "domain/director")
 
 (load "rules/commands")
 (load "rules/kicks")
@@ -499,6 +501,29 @@
 ;; And ESC on the title closes the door: the loop asks to quit.
 (host-type! "escape")
 (tk-assert "escape on the title asks to quit" *host-quit?*)
+
+;; --------------------------------------------------------------------- ;;
+;;  the director                                                            ;;
+;; --------------------------------------------------------------------- ;;
+
+;; D toggles the director mid-match, like A toggles the AI.
+(tk-reset!)
+(boot-into! 'marathon '())
+(tk-assert "the director starts off" (not *director*))
+(host-tap! "d")
+(tk-assert "D toggles the director on" *director*)
+
+;; An empty board is pressure below the band: once the cooldown has run,
+;; the director heats the pace, and the paced match keeps playing.
+(set! *director-cooldown* 100)   ;; a short fuse for the test's clock
+(host-clock! 16 40)
+(host-run-frames! 40)
+(tk-assert "the director heats an empty board" (< (game-pace *st*) 1))
+(tk-assert "the paced match is still live" (phase-playing? *st*))
+
+;; And D toggles it back off; the pace the match plays under stays.
+(host-tap! "d")
+(tk-assert "D toggles the director back off" (not *director*))
 
 (tk-report! "gameplay")
 

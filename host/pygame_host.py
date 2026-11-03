@@ -176,7 +176,7 @@ class PygameHost:
                  autostart: bool = False, play_script: bool = False,
                  mode: str | None = None, level: int | None = None,
                  seed: int | None = None, ai: bool = False,
-                 locale: str | None = None) -> None:
+                 director: bool = False, locale: str | None = None) -> None:
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -191,6 +191,7 @@ class PygameHost:
         self.level = level
         self.seed = seed
         self.ai = ai
+        self.director = director
         self.locale = locale
         self._frames = 0
         self._quit_seen = False
@@ -350,6 +351,8 @@ class PygameHost:
             pairs.append(pair("seed", int(self.seed)))
         if self.ai:
             pairs.append(pair("ai", True))
+        if self.director:
+            pairs.append(pair("director", True))
         if self.autostart:
             pairs.append(pair("autostart", True))
         if self.locale:
@@ -544,12 +547,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="the session's language (e.g. en, mn)")
     parser.add_argument("--ai", action="store_true",
                         help="the one-ply planner plays")
+    parser.add_argument("--director", action="store_true",
+                        help="the director paces the match to hold the stack "
+                             "in its pressure band")
     args = parser.parse_args(argv)
 
     host = PygameHost(headless=args.headless, max_frames=args.frames,
                       autostart=args.autostart, play_script=args.play,
                       mode=args.mode, level=args.level, seed=args.seed,
-                      ai=args.ai, locale=args.locale)
+                      ai=args.ai, director=args.director, locale=args.locale)
     env = make_game_env(host)
     from lisp import load_lisp
 

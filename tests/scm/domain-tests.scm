@@ -17,6 +17,8 @@
 (load "domain/modes")
 (load "domain/game")
 (load "domain/plan")
+(load "domain/telemetry")
+(load "domain/director")
 
 (load "rules/commands")
 (load "rules/kicks")
@@ -32,6 +34,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris plan)
+        (tetris telemetry) (tetris director)
         (tetris game)
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
@@ -495,6 +498,56 @@
 
 
 
+
+;; --------------------------------------------------------------------- ;;
+;;  telemetry — the match's vital signs                                    ;;
+;; --------------------------------------------------------------------- ;;
+
+;; An empty board holds no pressure.
+(check (pressure (new-game)) 0)
+(check (stack-mean (new-game)) 0)
+(check (stack-peak (new-game)) 0)
+(check (stack-wells (new-game)) 0)
+
+;; A placed piece reads as pressure: the peak is at least the mean, the
+;; pressure lands in its documented range, and the band question answers.
+(let* ((g (new-game))
+       (b (board-place (game-board g) 'i (cells-at 'i 0 4 18)))
+       (g* (game-with g board: b)))
+  (assert "a placed piece carries pressure" (> (pressure g*) 0))
+  (assert "the peak is at least the mean" (>= (stack-peak g*) (stack-mean g*)))
+  (assert "the pressure stays under 1" (< (pressure g*) 1))
+  (check (in-band? g* 0 1) #t)
+  (check (in-band? (new-game) 0.5 1) #f))
+
+;; --------------------------------------------------------------------- ;;
+;;  director — pressure in, pace out                                       ;;
+;; --------------------------------------------------------------------- ;;
+
+(let ((d (make-director)))
+  (check (director-pace d 0.4) 1)     ;; dead on the target: hold
+  (check (director-pace d 0.38) 1)    ;; inside the band: hold
+  (assert "an empty board heats the pace" (< (director-pace d 0) 1))
+  (assert "a full stack cools it" (> (director-pace d 1) 1))
+  (check (director-pace d -1) (director-low-pace d))   ;; the clamp holds
+  (check (director-pace d 2) (director-high-pace d)))
+
+;; The knobs are data: a moved target is a different director.
+(let ((d (make-director target: 0.6 band: 0.0)))
+  (check (director-pace d 0.6) 1)
+  (assert "a moved target moves the hold" (< (director-pace d 0.4) 1)))
+
+;; The paced interval bends the level's curve and holds the floor.
+(check (paced-interval 1 1) (drop-interval 1))
+(assert "a hot pace shortens the interval"
+        (< (paced-interval 1 0.5) (drop-interval 1)))
+(assert "a cool pace lengthens it"
+        (> (paced-interval 1 1.5) (drop-interval 1)))
+(check (paced-interval 30 0.5) 60)
+
+;; The pace rides on the match record: default 1, settable as a value.
+(check (game-pace (new-game)) 1)
+(check (game-pace (game-with (new-game) pace: 1.75)) 1.75)
 
 (display "all domain tests passed")
 (newline)

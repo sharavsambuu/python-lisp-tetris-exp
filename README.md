@@ -19,13 +19,16 @@ python -m host                 # the game, windowed — title menu first
 
 # headless, straight into a match, seeded, steered by the one-ply AI:
 python -m host --headless --frames 900 --autostart --mode sprint --seed 7 --ai
+
+# the same, with the director pacing the match toward its pressure band:
+python -m host --headless --frames 900 --autostart --mode sprint --seed 7 --ai --director
 ```
 
 Modes: `marathon` (endless), `sprint` (`target-lines`), `ultra`
 (`time-limit`), `cheese` (`cheese-rows`). The title menu walks
 campaign → level ladder → play; free play picks a mode and a starting
-level. In a match: `a` toggles the AI, `g` toggles the ghost, `p` pauses,
-`r` restarts, `esc` backs one screen.
+level. In a match: `a` toggles the AI, `d` toggles the director, `g`
+toggles the ghost, `p` pauses, `r` restarts, `esc` backs one screen.
 
 # The seam
 
@@ -47,7 +50,9 @@ scheme/
 │   ├── bag.scm               (tetris bag)      — the 7-bag as a pure value
 │   ├── modes.scm             (tetris modes)    — the four ways to play, as data
 │   ├── game.scm              (tetris game)     — the aggregate + phase/event ADTs
-│   └── plan.scm              (tetris plan)     — the AI's profile arithmetic
+│   ├── plan.scm              (tetris plan)     — the AI's profile arithmetic
+│   ├── telemetry.scm         (tetris telemetry) — the match's vital signs, as probes
+│   └── director.scm          (tetris director) — the pacing decision core
 ├── rules/
 │   ├── commands.scm          (tetris commands) — the closed command set + keymap
 │   ├── kicks.scm             (tetris kicks)    — SRS wall-kick tables
@@ -105,6 +110,15 @@ scheme/
   - **SRFI 241** — `match` with string and integer constant patterns reads
     the keymap and the award table as the tables they are (note the `,_`
     wildcard: bare symbols are constants in this SRFI).
+- **The director.** A second loop over the match: `(tetris telemetry)` reads
+  the stack's pressure off the game value (pure probes, documented ranges),
+  `(tetris director)` turns a pressure reading into a pace multiplier
+  (dead band, proportional error, hard clamps), and the match carries the
+  pace as a field — so `step-time` bends the gravity curve through
+  `(tetris gravity)`'s `paced-interval`, and every adjustment journals as a
+  `(paced n)` fact. The director may bend the curve; it may never leave the
+  player's hands. `--director` (or `d` in a match) turns it on; seeded
+  headless runs pace it against the same disturbances with and without it.
 
 # Tests
 

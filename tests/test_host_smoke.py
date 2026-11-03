@@ -52,6 +52,14 @@ def test_ai_plays_sprint():
     assert r.returncode == 0, r.stderr[-2000:]
 
 
+def test_director_paces_a_match():
+    """--director boots the director: a paced match runs clean headless,
+    with the scripted bot at the keys."""
+    r = run_host("--frames", "400", "--autostart", "--play", "--director")
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert "LispError" not in r.stderr, r.stderr[-2000:]
+
+
 def test_cheese_and_ultra_boot():
     """The other two modes start a match and run frames without incident."""
     for mode in ("cheese", "ultra"):
@@ -124,6 +132,7 @@ def test_step_budget_is_a_per_frame_ceiling():
         env = ph.make_game_env(host)
         for mod in ["core/rop", "domain/geometry", "domain/board", "domain/bag",
                     "domain/modes", "domain/game", "domain/plan",
+                    "domain/telemetry", "domain/director",
                     "rules/commands", "rules/kicks", "rules/scoring",
                     "policies/gravity", "rules/pipeline", "content/campaign",
                     "content/locale", "presentation/view",
@@ -218,6 +227,7 @@ def test_painter_paints():
 
     for mod in ["core/rop", "domain/geometry", "domain/board", "domain/bag",
                 "domain/modes", "domain/game", "domain/plan",
+                "domain/telemetry", "domain/director",
                 "rules/commands", "rules/kicks", "rules/scoring",
                 "policies/gravity", "rules/pipeline", "content/campaign",
                 "content/locale", "presentation/view",

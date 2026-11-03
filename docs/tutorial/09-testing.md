@@ -30,8 +30,8 @@ shadowing the Python ones the pytest harness installed:
 ```scheme
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
-;;; The edge modules (presentation/view, conductor/arcade) speak to sixteen
-;;; host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
+;;; The edge modules (presentation/view, the four conductor files) speak to
+;;; sixteen host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
 ;;; Python ones the pytest harness installed, so the whole arcade loop runs
 ;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
 ;;; call is recorded in `*host-log*`, so UI behavior is asserted against a
@@ -280,10 +280,14 @@ a way a DSL test suite lies to you, each learned the hard way:
   that loads and prints nothing has proven nothing: the kit's `tk-report!`
   prints a verdict, and the domain suite raises on the first surprise. If
   your harness can exit green with no output, it will, eventually, proudly.
-- **The step budget is per top-level form.** A suite that passes alone can
-  die under the orchestrator after an innocent edit makes its heaviest form
-  heavier — and the raise is uncatchable by `guard` (chapter 13 §13.7). The
-  raise lives in the bootstrap; know which form is your heaviest.
+- **The step budget is per top-level form — in the harness.** A suite that
+  passes alone can die under the orchestrator after an innocent edit makes
+  its heaviest form heavier — and the raise is uncatchable by `guard`
+  (chapter 13 §13.7). The raise lives in the bootstrap; know which form is
+  your heaviest. (In production the story is different: the host's `tick!`
+  resets the counter once per frame, so the game's budget is per frame —
+  chapter 10 §10.4. The harness has no frame boundary, so its budget is
+  still per form.)
 - **Enumerate the closed vocabularies.** `define-variant` makes a forgotten
   dispatch arm a named error at runtime — but only if something *reaches*
   that arm. The dead `sfx-command!` table survived because no test walked
@@ -315,7 +319,8 @@ suites never see a Python-installed name. The *content* of testing lives in
 Scheme, next to the code it tests. Keep it that way: a test suite split
 across two languages ages badly unless the Python side is dumb glue.
 
-The whole harness is one helper:
+The whole harness is one helper, plus the fixture that keeps suites from
+leaking their ceiling into each other:
 
 ```python
 # tests/test_scheme.py — the Scheme suites, headless.
@@ -323,9 +328,14 @@ The whole harness is one helper:
 # Each suite runs through the DSL with no pygame: the checks themselves
 # raise (or the testkit reports), so a clean load *is* the green light.
 
-lisp.evaluator.STEPS_BUDGET = 50_000_000
+@pytest.fixture(autouse=True)
+def _restore_step_budget():
+    """Snapshot the interpreter's step budget around every test."""
+    saved = lisp.evaluator.STEPS_BUDGET
+    yield
+    lisp.evaluator.STEPS_BUDGET = saved
 
-def _load(name, extra_paths=(), budget=50_000_000):
+def _load(name, extra_paths=(), budget=DEFAULT_BUDGET):
     lisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
@@ -335,10 +345,20 @@ def _load(name, extra_paths=(), budget=50_000_000):
 The budget line deserves its own comment (it has one in the file): the domain
 tests steer a whole sprint match through the one-ply planner — hundreds of
 thousands of interpreter steps in one top-level form. The interpreter's
-default 5M-step budget is a *hang detector* for production runs; a test that
-*is* a long computation asks for more. The number lives in the harness, not
-in the game, so a stuck game loop still dies loudly — and `_load` re-raises
-it per suite, so one suite's ceiling can never leak into another's.
+default 5M-step budget is a *per-frame hang detector* in production (the
+host's `tick!` resets the counter each frame — chapter 10 §10.4); a test that
+*is* a long computation in one form asks for more. The number lives in the
+harness, not in the game, so a stuck game loop still dies loudly — `_load`
+raises it per suite, and the autouse fixture restores it afterwards, so one
+suite's ceiling can never leak into another's.
+
+The suites that play whole matches or boot real subprocesses carry a `slow`
+marker (registered in `pytest.ini`), so the iteration loop stays fast:
+
+```
+python -m pytest tests/ -m "not slow" -q     # seconds, not minutes
+python -m pytest tests/ -q                   # the CI door: everything
+```
 
 And the glue is thinner than it looks, because the suites can run *without*
 pytest at all. `tests/scm/run-all.scm` is a Scheme-side orchestrator: one

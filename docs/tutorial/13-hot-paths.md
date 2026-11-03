@@ -268,10 +268,12 @@ re-architecting.**
 The step budget (chapter 10 §10.4) has a precise shape, and benchmark or
 test code that ignores it fails in confusing ways:
 
-1. **The budget is per top-level form.** A benchmark that times one
-   `(draw-board! *st*)` call needs far less headroom than a test that loads
-   a whole suite in one `load_lisp` — the hang detector charges each
-   top-level form separately.
+1. **The budget is per top-level form — in the harness.** A benchmark that
+   times one `(draw-board! *st*)` call needs far less headroom than a test
+   that loads a whole suite in one `load_lisp` — the hang detector charges
+   each top-level form separately. (In production the host resets the
+   counter per frame — chapter 10 §10.4 — but a benchmark or a test has no
+   frame boundary, so the bootstrap's raise is the only knob.)
 2. **The raise is not a Scheme condition.** `LispBudgetError` cannot be
    caught by `guard` — deliberately, because a hang detector the program
    could trap would detect nothing. Only the *embedding host* may size it:

@@ -1,7 +1,8 @@
 # Chapter 15 — The moving edge: game animations
 
 *The files it dissects: `scheme/presentation/view.scm`,
-`scheme/conductor/arcade.scm`.*
+`scheme/conductor/effects.scm` (the award table), and
+`scheme/conductor/screens.scm` (the repaint gate's caller).*
 
 > **Where you are.** Chapter 7 introduced the effects rail — a flash, a
 > shake, a beam, fed by journal facts. This chapter goes deeper, pop by

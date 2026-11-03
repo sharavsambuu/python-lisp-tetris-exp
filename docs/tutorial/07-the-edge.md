@@ -1,7 +1,8 @@
 # Chapter 7 — The edge
 
-*The files it dissects: `scheme/presentation/view.scm`,
-`scheme/conductor/arcade.scm`.*
+*The files it dissects: `scheme/presentation/view.scm` and the conductor's
+`scheme/conductor/effects.scm` (the award table) and
+`scheme/conductor/screens.scm` (the menus).*
 
 > **Where you are.** The game now runs — states transform, time passes. This
 > chapter is where the player finally *sees* it, and where you learn the
@@ -171,7 +172,7 @@ animations: *nothing happened* is not the same as *nothing is moving*. Without
 ## 7.3 The award table: the journal becomes feedback
 
 The conductor reads the drained journal and pays out
-(`conductor/arcade.scm`):
+(`conductor/effects.scm`):
 
 ```scheme
 ;; The rows go into the journal *as rows* — the edge's animation paints

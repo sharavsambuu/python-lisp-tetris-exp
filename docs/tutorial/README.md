@@ -118,7 +118,11 @@ scheme/
 ├── content/campaign.scm      (tetris campaign) — challenges, ladders, progress
 ├── policies/gravity.scm      (tetris gravity)  — pacing curves
 ├── presentation/view.scm     the painter (edge module)
-├── conductor/arcade.scm      the shell: screens, input, AI, effects (edge)
+├── conductor/
+│   ├── effects.scm           the effects rail: speaker policy, screen awards (edge)
+│   ├── screens.scm           the menu values, the screens, the menu input (edge)
+│   ├── input.scm             the key dispatch: events, keys, repeats (edge)
+│   └── arcade.scm            the conductor: session state, match lifecycle, AI, loop (edge)
 └── main.scm                  loads contexts in order, runs (arcade-main)
 ```
 

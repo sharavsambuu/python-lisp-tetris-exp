@@ -1,7 +1,7 @@
 # Chapter 16 — The mixing desk: game sound effects
 
-*The files it dissects: `scheme/conductor/arcade.scm`,
-`host/pygame_host.py`.*
+*The files it dissects: `scheme/conductor/effects.scm` (the speaker's
+routing table and the journal drain), `host/pygame_host.py` (the tones).*
 
 > **Where you are.** Chapter 7 showed the speaker's contract — `sfx!` takes
 > one name, the host owns the noise — and chapter 15 fed the effects rail.

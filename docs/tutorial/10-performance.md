@@ -104,20 +104,53 @@ it, but you can stop paying it *twice*:
 
 ## 10.4 The step budget is a feature
 
-The DSL raises its step ceiling for a game session — a painted frame costs
-~1k honest steps, so the interpreter's default hang detector would kill a
-match two minutes in. The test that pins it:
+The interpreter's step budget is a hang detector scoped to one root
+evaluation — and a game session *is* one root evaluation (`arcade-main`'s
+tail loop), so the naive fixes are both wrong: leave it at 5M and an honest
+session dies two minutes in; raise it to a session-length 2e9 and the
+detector never fires again. The fix that keeps both properties: **the host
+resets the counter once per frame.** `tick!` is the one primitive the
+conductor calls on every frame path, so it is the honest frame boundary —
+and `FRAME_STEPS_BUDGET` (5M) now reads as "steps one frame may spend." An
+honest frame costs a few thousand steps; an endless loop in a frame dies
+loudly, mid-game, with a `LispBudgetError`.
+
+```python
+def tick(self) -> int:
+    """One frame: hold ~60 fps, answer the elapsed milliseconds.
+
+    Also the frame boundary for the interpreter's step budget — the
+    counter is reset here, once per frame, so ``FRAME_STEPS_BUDGET``
+    reads as "steps one frame may spend" and the hang detector still
+    detects hangs (see :func:`_reset_frame_budget`).
+    """
+    _reset_frame_budget()
+    dt = self.clock.tick(60)
+```
+
+The test that pins the shape — a long session must outlive the old per-form
+budget many times over, and the detector must still fire on a real endless
+loop:
 
 ```python
 def test_long_session_outlives_the_default_step_budget():
     """A real play session is ONE top-level form that runs for millions of
-    honest steps — the interpreter's 5M hang detector used to kill it about
-    two minutes into a game. The host now raises the ceiling; this runs
-    enough frames to blow past the old budget and must exit clean."""
+    honest steps — the interpreter's per-form 5M hang detector used to kill
+    it about two minutes into a game, and a session-length 2e9 rubber
+    stamp fixed the crash by disabling the detector. The budget is per
+    frame now (`tick!` resets the counter); this runs enough frames to
+    blow past the old per-form budget many times over and must exit clean.
+    """
     r = run_host("--frames", "2500", "--autostart", "--play", timeout=240)
     assert r.returncode == 0, r.stderr[-2000:]
     assert "LispBudgetError" not in r.stderr, r.stderr[-2000:]
 ```
+
+One honesty note: the reset reaches into the pinned DSL's thread-local
+internals (`_local.budget.steps`), because there is no public handle yet.
+The getattr chain degrades to the old session-length semantics rather than
+crashing if the internals move — and if you own the DSL, expose a public
+`reset_steps()` so the underscore can go away.
 
 But keep the budget *on*: `LispBudgetError` ("an endless loop?") is exactly
 what caught the journal-drain bug in chapter 6 — a runaway loop that a
@@ -139,7 +172,8 @@ platform, and platforms are earned, not micro-tuned.
 3. Batch crossings of the boundary — once per frame, not per fact.
 4. Make quiet frames provably cheap (the dirty flag + `view-busy?`).
 5. Prefer in-place-on-a-copy (vectors) over rebuilding (lists) in hot math.
-6. Keep the step budget as a hang detector, raised but not disabled.
+6. Keep the step budget as a hang detector — per frame (reset it at the
+   frame boundary), never a session-length rubber stamp.
 7. Clamp dt at the clock, so a stall costs frames, not a rerun of history.
 
 ## Exercises

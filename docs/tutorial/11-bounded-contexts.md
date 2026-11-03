@@ -102,8 +102,9 @@ proportion to how silently they can be broken.
 
 ## 11.4 Why the edge is not a library
 
-`presentation/view.scm` and `conductor/arcade.scm` are deliberately
-prelude-style modules:
+`presentation/view.scm` and the conductor's four files
+(`conductor/effects.scm`, `screens.scm`, `input.scm`, `arcade.scm`) are
+deliberately prelude-style modules:
 
 ```scheme
 ;;; presentation/view.scm — the painter (an edge module, not a library).

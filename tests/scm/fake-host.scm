@@ -1,7 +1,7 @@
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
-;;; The edge modules (presentation/view, conductor/arcade) speak to sixteen
-;;; host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
+;;; The edge modules (presentation/view, the four conductor files) speak to
+;;; sixteen host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
 ;;; Python ones the pytest harness installed, so the whole arcade loop runs
 ;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
 ;;; call is recorded in `*host-log*`, so UI behavior is asserted against a

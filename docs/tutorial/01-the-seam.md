@@ -129,7 +129,11 @@ more than they look:
 (load "content/campaign")    ; content: data, not code
 
 (load "presentation/view")   ; the edge: speaks to the host
-(load "conductor/arcade")    ; the shell: screens, input, AI, the loop
+
+(load "conductor/effects")   ; the effects rail: speaker policy, screen awards
+(load "conductor/screens")   ; the menus, the screens, the menu input
+(load "conductor/input")     ; the key dispatch: events, keys, repeats
+(load "conductor/arcade")    ; the shared state, match lifecycle, AI, the loop
 
 (arcade-main)                ; Scheme's own tail-call loop, forever
 ```
@@ -142,9 +146,12 @@ One subtlety hides in the word `load`. Loading a `define-library` file
 *registers* the library — its body does not run until something first imports
 it. So `main.scm` reads top-down as "here are the contexts, in dependency
 order," while the actual evaluation order is decided by the import graph. The
-two edge modules (`view`, `conductor`) are the exception: not being libraries,
-their bodies run at load, which is exactly when their top-level defines need
-to exist for `arcade-main` to see them.
+edge modules (`view`, the four `conductor` files) are the exception: not being
+libraries, their bodies run at load, which is exactly when their top-level
+defines need to exist for `arcade-main` to see them. The conductor's four
+files share one interaction environment and load in a fixed order (effects →
+screens → input → arcade); a call from one into another resolves at run time,
+so the order is for the reader, not the evaluator.
 
 ## 1.3 Two kinds of module, on purpose
 

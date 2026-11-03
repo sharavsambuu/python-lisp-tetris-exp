@@ -82,6 +82,22 @@
          (map (lambda (ch) (if (char=? ch #\space) #\- ch))
               (string->list label))))))
 
+    ;; A locale's spellings differ in length, and the panels do not move —
+    ;; so the TYPE scales, never the text: shrink the size until the
+    ;; string fits its budget (floored at 10, so a pathological string
+    ;; degrades to small type, not to nothing). `text-width` is one
+    ;; cached-font measurement; the loop runs only while the string still
+    ;; overflows, and only on frames that paint it.
+    (define (fit-size s size max-w)
+      (if (or (<= size 10) (<= (text-width s size) max-w))
+          size
+          (fit-size s (- size 1) max-w)))
+
+    ;; `draw-text!` with a width budget: the type scales to fit, the
+    ;; position and the string stay as asked.
+    (define (draw-text-fit! x y s size rgb max-w)
+      (draw-text! x y s (fit-size s size max-w) rgb))
+
     ;; ---------------------------------------------------------------- ;;
     ;;  The effects rail — flash and shake, fed by the conductor           ;;
     ;; ---------------------------------------------------------------- ;;
@@ -375,31 +391,36 @@
         ;; cheese's remaining dig.
         (variant-match (config-mode cfg)
           ((ultra)
-           (draw-text! x 530
-                       (tr-fmt 'hud-time
-                               (time-remaining (game-clock st) cfg))
-                       22 (color warn:)))
+           (draw-text-fit! x 530
+                           (tr-fmt 'hud-time
+                                   (time-remaining (game-clock st) cfg))
+                           22 (color warn:)
+                           (- window-width x 8)))
           ((sprint)
-           (draw-text! x 530
-                       (tr-fmt 'hud-target
-                               (game-lines st)
-                               (config-target-lines cfg))
-                       22 (color accent:)))
+           (draw-text-fit! x 530
+                           (tr-fmt 'hud-target
+                                   (game-lines st)
+                                   (config-target-lines cfg))
+                           22 (color accent:)
+                           (- window-width x 8)))
           ((cheese)
-           (draw-text! x 530
-                       (tr-fmt 'hud-garbage
-                               (garbage-count (game-board st)))
-                       22 (color warn:)))
+           (draw-text-fit! x 530
+                           (tr-fmt 'hud-garbage
+                                   (garbage-count (game-board st)))
+                           22 (color warn:)
+                           (- window-width x 8)))
           (else #f))
         ;; The scoring chain, while it runs — under the NEXT panel.
         (let ((rx (+ (lay right-x:) 8)))
           (if (> (game-combo st) 0)
-              (draw-text! rx 268
-                          (tr-fmt 'hud-combo (game-combo st))
-                          20 (color accent:))
+              (draw-text-fit! rx 268
+                              (tr-fmt 'hud-combo (game-combo st))
+                              20 (color accent:)
+                              (- window-width rx 8))
               #f)
           (if (game-b2b st)
-              (draw-text! rx 296 (tr 'hud-b2b) 18 (color warn:))
+              (draw-text-fit! rx 296 (tr 'hud-b2b) 18 (color warn:)
+                              (- window-width rx 8))
               #f))))
 
     (define (draw-hint! st)
@@ -414,14 +435,15 @@
           (if (null? ls)
               #f
               (begin
-                (draw-text! x (+ 356 (* i 24))
-                            (string-append (car (car ls))
-                                           " "
-                                           (tr-or (key-label-key
-                                                   (car (cdr (car ls))))
-                                                  (car (cdr (car ls)))))
-                            16
-                            (color dim:))
+                (draw-text-fit! x (+ 356 (* i 24))
+                                (string-append (car (car ls))
+                                               " "
+                                               (tr-or (key-label-key
+                                                       (car (cdr (car ls))))
+                                                      (car (cdr (car ls)))))
+                                16
+                                (color dim:)
+                                (- window-width x 8))
                 (loop (cdr ls) (+ i 1)))))))
 
     (define (draw-overlay! lines)
@@ -446,7 +468,7 @@
                      (size (car (cdr spec)))
                      (x (centered-x 0 width s size)))
                 (if (> (string-length s) 0)
-                    (draw-text! x y s size (color text:))
+                    (draw-text-fit! x y s size (color text:) (- width 16))
                     #f)
                 (loop (cdr ls) (+ y size 14)))))))
 

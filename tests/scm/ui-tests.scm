@@ -125,6 +125,16 @@
            (member "SCHEME TETRIS" (host-text-strings)))
 (tk-assert "the mongolian frame's painter calls fit"
            (every host-fits-window? *host-log*))
+;; The HUD speaks Mongolian too, and the panels do not move: the painter
+;; scales the type until every label fits its budget — a sprint match
+;; exercises the widest gauge (ЗОРИЛТ) and the keys panel rows.
+(start-match! 'sprint (list (list 'target-lines 5)) 'free #f #f #f)
+(draw-game! *st*)
+(tk-assert "the mongolian HUD's painter calls fit"
+           (every host-fits-window? *host-log*))
+(boot-fresh!)
+(host-type! "down")
+(host-type! "down")
 (host-type! "return")
 (draw-screen!)
 (tk-assert "a second toggle answers English"

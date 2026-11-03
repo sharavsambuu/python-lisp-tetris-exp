@@ -1,7 +1,7 @@
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
-;;; The edge modules (presentation/view, the four conductor files) speak to
-;;; sixteen host primitives. This file DEFINES ALL SIXTEEN in Scheme, shadowing the
+;;; The edge modules (presentation/view, the conductor files) speak to
+;;; eighteen host primitives. This file DEFINES ALL EIGHTEEN in Scheme, shadowing the
 ;;; Python ones the pytest harness installed, so the whole arcade loop runs
 ;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
 ;;; call is recorded in `*host-log*`, so UI behavior is asserted against a
@@ -33,6 +33,10 @@
 (define *host-boot-config* '())
 (define *host-autostart* #f)
 (define *host-presents* 0)
+;; The profile "disk": the document a write left behind. `host-reset!`
+;; clears it — the disk dies with the host — so a persistence test
+;; snapshots the document and replays it to simulate a restart.
+(define *host-profile* '())
 
 (define (host-reset!)
   (set! *host-log* '())
@@ -44,13 +48,14 @@
   (set! *host-window* #f)
   (set! *host-boot-config* '())
   (set! *host-autostart* #f)
-  (set! *host-presents* 0))
+  (set! *host-presents* 0)
+  (set! *host-profile* '()))
 
 (define (host-log! op . args)
   (set! *host-log* (cons (cons op args) *host-log*)))
 
 ;; --------------------------------------------------------------------- ;;
-;;  The sixteen primitives                                                 ;;
+;;  The eighteen primitives                                                ;;
 ;; --------------------------------------------------------------------- ;;
 
 (define (open-window! w h title)
@@ -116,6 +121,18 @@
 (define (quit-requested?) *host-quit?*)
 
 (define (boot-config) *host-boot-config*)
+
+;; The profile primitives: the same shape the real host answers. A
+;; read is logged so a test can see the boot touched the disk; a write
+;; replaces the document wholesale, the way one atomic rename does.
+(define (read-profile)
+  (host-log! 'read-profile)
+  *host-profile*)
+
+(define (write-profile! doc)
+  (host-log! 'write-profile! doc)
+  (set! *host-profile* doc)
+  #t)
 
 (define (held? name)
   (if (assq name *host-held*) #t #f))

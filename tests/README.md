@@ -24,11 +24,11 @@ tests/
 
 # The two hosts
 
-The edge modules speak to sixteen primitives (`open-window!`, `tick!`,
+The edge modules speak to eighteen primitives (`open-window!`, `tick!`,
 `poll-events!`, `draw-rect!`, `sfx!`, …). The tests implement that contract
 **twice**:
 
-- **`fake-host.scm`** — the same sixteen names in pure Scheme. Every painter
+- **`fake-host.scm`** — the same eighteen names in pure Scheme. Every painter
   call is recorded in `*host-log*`; events are queued as the same
   `type:`/`key:` alists the real pump builds; the clock answers scripted dt
   values; and the DAS/ARR repeat pump runs the same cadence and the same

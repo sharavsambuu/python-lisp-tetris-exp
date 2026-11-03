@@ -286,6 +286,7 @@
            ;; back. `menu-set` clamps, so the rebuild cannot walk the
            ;; cursor off the end.
            (cycle-locale!)
+           (profile-record-locale!)
            (set! *menu* (menu-set (make-menu (menu-entries (title-menu)))
                                   (menu-cursor *menu*)))
            (sfx! "menu-move")

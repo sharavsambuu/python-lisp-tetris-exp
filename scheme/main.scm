@@ -28,6 +28,7 @@
 (load "content/roster")
 (load "content/locale")
 
+(load "conductor/profile")
 (load "presentation/view")
 
 (load "conductor/effects")

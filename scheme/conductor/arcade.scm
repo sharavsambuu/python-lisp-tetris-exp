@@ -146,7 +146,11 @@
             (begin
               (set! *done* (mark-done *done* *playing-key*))
               #t)
-            #f)))
+            #f)
+        ;; The settle is the save point: the outcome is final, so the
+        ;; disk is worth exactly one write.
+        (profile-sync-progress!)
+        (profile-save!)))
 
     ;; The level a won campaign match hands the player: the next rung of the
     ;; ladder, or #f when the ladder is finished.
@@ -453,7 +457,7 @@
       (boot!)
       (let loop ()
         (if (quit-requested?)
-            (begin (quit!) #f)
+            (begin (profile-save!) (quit!) #f)
             (begin
               (arcade-step!)
               (loop))))))
@@ -465,6 +469,10 @@
     ;; session in that language (the menu setting can change it after).
     ;; `boot-config` is a host primitive the smoke tests drive.
     (define (boot!)
+      ;; The memory loads first: the profile restores the session's
+      ;; progress. A locale on the command line still wins over the
+      ;; saved one — a flag is a wish the player made just now.
+      (profile-load!)
       (let ((cfg (boot-config)))
         (define (opt k) (let ((e (assq k cfg))) (if e (cdr e) #f)))
         (let ((seed (opt 'seed))

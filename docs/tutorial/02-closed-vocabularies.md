@@ -2,7 +2,8 @@
 
 *The files it dissects: `scheme/domain/game.scm`, `scheme/rules/commands.scm`.*
 
-> **Where you are.** Chapter 1 gave you the seam: sixteen primitives, and a
+> **Where you are.** Chapter 1 gave you the seam: a short, closed list of
+> primitives, and a
 > program that is pure Scheme. Now you design your first data.
 >
 > **By the end of this chapter you can** declare a closed vocabulary with

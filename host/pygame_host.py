@@ -22,6 +22,12 @@ down once, in that table:
   callbacks: the Scheme side folds over it.
 * ``(held? name)``, ``(quit-requested?)``, ``(autostart?)``,
   ``(sfx! name)``, ``(quit!)`` — input state, the speaker, the teardown.
+* ``(read-profile)``, ``(write-profile! doc)`` — the game's memory.
+  Python owns the file: JSON at the platform config dir, written
+  atomically, versioned. The document crosses as an alist — the same
+  move as ``boot-config`` — and Scheme owns its meaning: what it holds,
+  when it is written, what a corrupt one costs (a fresh start, never a
+  crash).
 
 A headless run is a first-class citizen: ``--frames N`` answers quit after N
 frames (that is how the smoke test drives the whole game with SDL's dummy
@@ -169,6 +175,96 @@ def _reset_frame_budget() -> None:
         budget.steps = 0
 
 
+def default_profile_path() -> Path:
+    """Where the profile lives: the platform's config dir, one subfolder.
+
+    A test passes its own path (``--profile``); a player gets the
+    per-user config directory, so one account's progress is one file.
+    """
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "scheme-tetris" / "profile.json"
+
+
+def _doc_to_python(value):
+    """A document value, Scheme → Python: an alist is an object.
+
+    The profile document's contract: every list that crosses is an
+    alist — a proper list of ``(key . value)`` dotted pairs with string
+    keys — and every other value is a JSON scalar (bool, int, float,
+    str). Anything else is refused by the caller, not coerced: a
+    document this side cannot spell is a document it should not write.
+
+    The interpreter's list representation has two faces this walk must
+    both handle: the reader materializes quoted lists as Python lists,
+    while ``cons`` builds ``Pair`` cells — so an alist is either a
+    Python list of ``Pair`` entries or a ``Pair`` spine whose cars are
+    the entries and whose cdr is the rest (a list or another cell).
+    """
+    from lisp.types import NIL, Pair
+
+    if value is NIL or value is None:
+        return None
+    if isinstance(value, list):
+        if not value:
+            return None
+        out = {}
+        for entry in value:
+            key, val = _doc_entry(entry)
+            out[key] = val
+        return out
+    if isinstance(value, Pair):
+        out = {}
+        node = value
+        while isinstance(node, Pair):
+            key, val = _doc_entry(node.car)
+            out[key] = val
+            node = node.cdr
+        if node is NIL or node == [] or (isinstance(node, list) and not node):
+            return out
+        raise ValueError("improper list in profile document")
+    if isinstance(value, bool) or isinstance(value, (int, float, str)):
+        return value
+    raise ValueError(f"unsupported profile value: {type(value).__name__}")
+
+
+def _doc_entry(entry):
+    """One ``(key . value)`` crossing: the key spells, the value recurs.
+
+    The interpreter folds a cons onto a list into a proper list, so the
+    same entry arrives with two faces: ``Pair(key, value)`` for a
+    scalar (or dotted) value, and the proper list ``(key <value…>)``
+    when the value is itself a list — the key first, the value as the
+    rest. Both readings answer the same ``(cdr entry)`` on the Scheme
+    side; this side accepts both and refuses everything else.
+    """
+    from lisp.types import Pair
+
+    if isinstance(entry, Pair):
+        return str(entry.car), _doc_to_python(entry.cdr)
+    if isinstance(entry, list) and entry:
+        return str(entry[0]), _doc_to_python(entry[1:])
+    raise ValueError("profile alists must be (key . value) entries")
+
+
+def _doc_to_scheme(value):
+    """A document value, Python → Scheme: an object is an alist."""
+    from lisp.types import NIL, Pair
+
+    if value is None:
+        return NIL
+    if isinstance(value, dict):
+        out = NIL
+        for key in reversed(value):  # JSON order survives the round trip
+            out = Pair(Pair(key, _doc_to_scheme(value[key])), out)
+        return out
+    if isinstance(value, bool) or isinstance(value, (int, float, str)):
+        return value
+    raise ValueError(f"unsupported profile value: {type(value).__name__}")
+
+
 class PygameHost:
     """The edge object: one instance, installed into the env as primitives."""
 
@@ -176,7 +272,8 @@ class PygameHost:
                  autostart: bool = False, play_script: bool = False,
                  mode: str | None = None, level: int | None = None,
                  seed: int | None = None, ai: bool = False,
-                 director: bool = False, locale: str | None = None) -> None:
+                 director: bool = False, locale: str | None = None,
+                 profile_path: str | None = None) -> None:
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -196,6 +293,12 @@ class PygameHost:
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
+        # The profile file: the game's memory across restarts. Python
+        # owns the bytes (JSON, atomic write); the document's meaning is
+        # the Scheme side's. A test passes its own path; a player gets
+        # the platform config dir.
+        self.profile_path = (Path(profile_path) if profile_path
+                             else default_profile_path())
         # The repeat pump's state: keycode -> ms until that key's next
         # repeat (KEYDOWN seeds it with the DAS delay). Plus the last
         # frame's dt, which feeds the pump.
@@ -360,6 +463,74 @@ class PygameHost:
         # One flat proper list, first flag first — an alist assq can walk.
         return make_list(pairs) if pairs else NIL
 
+    # ------------------------------------------------------------------ #
+    #  the profile: the game's memory                                     #
+    # ------------------------------------------------------------------ #
+
+    def read_profile(self) -> list:
+        """The saved profile document, as an alist the Scheme side owns.
+
+        A missing file is a first boot: the Scheme empty list, quietly.
+        A corrupt or foreign file is also an empty list — but with a
+        console note, because a player whose progress vanished deserves
+        to know it happened. The bytes are all this side owns: validity
+        (the version check, the shape) is the Scheme side's guard.
+        """
+        import json
+
+        from lisp.types import NIL
+
+        try:
+            text = self.profile_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return NIL
+        except OSError as exc:
+            print(f"profile: unreadable ({exc}); starting fresh", flush=True)
+            return NIL
+        try:
+            doc = json.loads(text)
+        except (ValueError, UnicodeDecodeError):
+            print(f"profile: corrupt ({self.profile_path}); starting fresh",
+                  flush=True)
+            return NIL
+        if not isinstance(doc, dict):
+            print(f"profile: not a document ({self.profile_path}); "
+                  "starting fresh", flush=True)
+            return NIL
+        try:
+            return _doc_to_scheme(doc)
+        except (ValueError, TypeError) as exc:
+            print(f"profile: unreadable values ({exc}); starting fresh",
+                  flush=True)
+            return NIL
+
+    def write_profile(self, doc) -> bool:
+        """Persist the document: JSON, atomically, or a note and no harm.
+
+        Atomicity is the whole point of the tmp-then-rename dance: the
+        game can die mid-write and the file on disk is either the old
+        document or the new one, never half of each. A document this
+        side cannot spell (a non-alist, an exotic value) is refused —
+        the Scheme side's meaning is not this side's to guess at.
+        """
+        import json
+
+        try:
+            payload = _doc_to_python(doc)
+        except (ValueError, TypeError) as exc:
+            print(f"profile: not saved ({exc})", flush=True)
+            return False
+        try:
+            self.profile_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.profile_path.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp, self.profile_path)
+            return True
+        except OSError as exc:
+            print(f"profile: not saved ({exc})", flush=True)
+            return False
 
     # ------------------------------------------------------------------ #
     #  the painter                                                        #
@@ -494,6 +665,8 @@ class PygameHost:
             ("poll-events!", self.poll_events),
             ("quit-requested?", self.quit_seen),
             ("boot-config", self.boot_config),
+            ("read-profile", self.read_profile),
+            ("write-profile!", self.write_profile),
             ("held?", self.held),
             ("sfx!", self.sfx),
             ("quit!", self.quit),
@@ -545,6 +718,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="the bag's seed: a steerable, replayable match")
     parser.add_argument("--locale", default=None, metavar="LOCALE",
                         help="the session's language (e.g. en, mn)")
+    parser.add_argument("--profile", default=None, metavar="PATH",
+                        help="the profile file (default: the platform "
+                             "config dir's scheme-tetris/profile.json)")
     parser.add_argument("--ai", action="store_true",
                         help="the one-ply planner plays")
     parser.add_argument("--director", action="store_true",
@@ -555,7 +731,8 @@ def main(argv: list[str] | None = None) -> int:
     host = PygameHost(headless=args.headless, max_frames=args.frames,
                       autostart=args.autostart, play_script=args.play,
                       mode=args.mode, level=args.level, seed=args.seed,
-                      ai=args.ai, director=args.director, locale=args.locale)
+                      ai=args.ai, director=args.director, locale=args.locale,
+                      profile_path=args.profile)
     env = make_game_env(host)
     from lisp import load_lisp
 

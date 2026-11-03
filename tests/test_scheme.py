@@ -98,14 +98,16 @@ def test_domain_modules_are_pure_r7rs_libraries():
     """
     forbidden = ("draw-rect", "draw-frame", "draw-text", "clear-screen",
                  "sfx!", "open-window!", "tick!", "poll-events!",
-                 "present!", "held?", "quit!", "tint!", "boot-config")
+                 "present!", "held?", "quit!", "tint!", "boot-config",
+                 "read-profile", "write-profile!")
     pure = [
         "domain/geometry.scm", "domain/board.scm", "domain/bag.scm",
         "domain/modes.scm", "domain/game.scm", "domain/plan.scm",
-        "domain/telemetry.scm", "domain/director.scm",
+        "domain/telemetry.scm", "domain/director.scm", "domain/duel.scm",
         "rules/commands.scm", "rules/kicks.scm",
         "rules/scoring.scm", "policies/gravity.scm", "rules/pipeline.scm",
         "core/rop.scm", "content/campaign.scm", "content/locale.scm",
+        "content/roster.scm",
     ]
     for rel in pure:
         text = (SCHEME / rel).read_text()

@@ -6,7 +6,7 @@
 > `(define (f x) ...)`, `let`, `cond` — and Python. Nothing else.
 >
 > **By the end of this chapter you can** explain where every line of the game
-> runs, name all sixteen primitives the script may call, and boot your own
+> runs, name all the primitives the script may call, and boot your own
 > scripted session against the host.
 >
 > **The running project.** Each chapter ends by adding one piece to a small
@@ -28,7 +28,7 @@ piece, so by chapter 12 you will have written a second, smaller game in the
 same style, and the techniques will be things you have *done*, not things you
 have *read*.
 
-## 1.1 The seam is a list of sixteen names
+## 1.1 The seam is a list of eighteen names
 
 The entire surface Python offers the game is declared in one place
 (`host/pygame_host.py`):
@@ -55,7 +55,7 @@ The names, grouped by what they own:
 
 ### One primitive, from both sides
 
-It is worth seeing one primitive end to end, because every one of the sixteen
+It is worth seeing one primitive end to end, because every one of the eighteen
 follows the same shape. On the Python side, a method on the host object:
 
 ```python
@@ -72,10 +72,12 @@ On the Scheme side, an ordinary call:
 No marshalling layer, no IDL, no code generation. The DSL's `Primitive`
 wrapper takes the Python callable and makes it a Scheme procedure; arguments
 cross as native values (strings, numbers, lists, the DSL's keyword objects).
-That simplicity is *why* the seam stays at sixteen names — adding a seventeenth
-is a method plus one line in the list, so there is no economy-of-scale
-pressure to build a kitchen-sink primitive like `draw-ui!` that smuggles
-decisions across the boundary.
+That simplicity is *why* the seam stayed at sixteen names for the whole first
+arc — adding a seventeenth is a method plus one line in the list, so there is
+no economy-of-scale pressure to build a kitchen-sink primitive like
+`draw-ui!` that smuggles decisions across the boundary. When the game finally
+grew a memory, two names earned their place (chapter 20) — and the list, not
+a convention, is what made the growth reviewable.
 
 The same symmetry applies to *data*. The boot config crosses as an alist the
 Scheme side can `assq`:
@@ -103,7 +105,7 @@ more than they look:
    list and knows every effect the script can have on the world. There is no
    `import os` hiding in Scheme-land, because the DSL has no `import`.
 2. **Testability.** Chapter 9 replaces this list with a Scheme fake of the same
-   sixteen names and the entire game runs headless in pure Scheme. That is only
+   names and the entire game runs headless in pure Scheme. That is only
    possible because the seam is *closed*.
 
 ## 1.2 Loading order is the architecture

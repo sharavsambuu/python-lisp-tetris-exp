@@ -40,17 +40,23 @@ MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
            "rules/pipeline", "content/campaign", "content/locale",
-           "presentation/view",
+           "conductor/profile", "presentation/view",
             "conductor/effects", "conductor/screens",
             "conductor/input", "conductor/arcade"]
 
 
 @pytest.fixture()
-def env():
-    """The real host on SDL's dummy drivers, with the conductor loaded."""
+def env(tmp_path):
+    """The real host on SDL's dummy drivers, with the conductor loaded.
+
+    The profile points into the test's tmp dir: a test that settles a
+    match writes its profile, and a test must never touch the real
+    config dir's file.
+    """
     pygame.init()
     try:
-        host = ph.PygameHost(headless=True)
+        host = ph.PygameHost(headless=True,
+                             profile_path=str(tmp_path / "profile.json"))
         e = ph.make_game_env(host)
         for m in MODULES:
             load_lisp(e, SCHEME / (m + ".scm"))

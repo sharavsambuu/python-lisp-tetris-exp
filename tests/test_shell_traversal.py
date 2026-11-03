@@ -27,7 +27,8 @@ from lisp.types import NIL, intern, intern_keyword  # noqa: E402
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
-           "rules/pipeline", "content/campaign", "content/locale", "presentation/view",
+           "rules/pipeline", "content/campaign", "content/locale",
+           "conductor/profile", "presentation/view",
            "conductor/effects", "conductor/screens", "conductor/input",
            "conductor/arcade"]
 
@@ -76,6 +77,8 @@ def env():
             ("poll-events!", lambda: NIL),
             ("quit-requested?", lambda: False),
             ("boot-config", lambda: NIL),
+            ("read-profile", lambda: NIL),
+            ("write-profile!", lambda doc: True),
             ("held?", lambda n: False),
             ("sfx!", lambda n: None),
             ("quit!", lambda: None),

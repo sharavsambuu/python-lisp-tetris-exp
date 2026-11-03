@@ -27,6 +27,7 @@
 
 (load "content/campaign")
 (load "content/locale")
+(load "conductor/profile")
 (load "presentation/view")
 (load "conductor/effects")
 (load "conductor/screens")
@@ -454,6 +455,35 @@
 (tk-check "a free-play win returns to the title" (screen) 'title)
 
 ;; --------------------------------------------------------------------- ;;
+;;  the profile — the settle was a save, and a fresh boot reads it back   ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The sprint win above settled, and the settle is the save point: the
+;; best is on the fake host's disk. No second match is played here —
+;; this section reads what that win already wrote.
+(tk-section "the profile")
+(tk-assert "the settled match wrote the profile"
+           (not (null? (host-ops 'write-profile!))))
+(tk-assert "the document is versioned"
+           (equal? (profile-ref *host-profile* "version") 1))
+(tk-assert "the win's best is on the disk"
+           (assoc "sprint" (profile-ref *host-profile* "bests" '())))
+
+;; A restart, honestly simulated: the disk survives, the session does
+;; not. The same document, a fresh boot — and the best is back.
+(let ((disk *host-profile*)
+      (score (best-for *bests* "sprint")))
+  (tk-assert "the session had a best to lose" (> score 0))
+  (host-reset!)
+  (set! *host-profile* disk)       ; the same disk, a fresh session
+  (open-window! window-width window-height "test")
+  (boot!)
+  (tk-assert "the boot read the disk" (not (null? (host-ops 'read-profile))))
+  (tk-check "the best survived the restart"
+            (best-for *bests* "sprint") score)
+  (tk-assert "the won-set came back too" (null? *done*)))
+
+;; --------------------------------------------------------------------- ;;
 ;;  the campaign ladder — a win unlocks and starts the next level            ;;
 ;; --------------------------------------------------------------------- ;;
 
@@ -524,6 +554,34 @@
 ;; And D toggles it back off; the pace the match plays under stays.
 (host-tap! "d")
 (tk-assert "D toggles the director back off" (not *director*))
+
+;; --------------------------------------------------------------------- ;;
+;;  the profile's failure posture                                          ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The disk's bad days are values the session runs on, never crashes:
+;; a foreign document boots fresh and stays writable (it was noise; a
+;; fresh file is an improvement), a NEWER document boots fresh but is
+;; never overwritten — losing progress is honest, clobbering a file
+;; this build cannot read is not.
+(tk-section "the profile's failure posture")
+
+(host-reset!)
+(set! *host-profile* 42)           ; not an alist: not ours
+(open-window! window-width window-height "test")
+(boot!)
+(tk-check "a foreign document boots fresh" *profile* (fresh-profile))
+(tk-assert "a foreign document stays writable" (not *profile-readonly*))
+
+(host-reset!)
+(set! *host-profile* (list (cons "version" 2) (cons "bests" '())))
+(open-window! window-width window-height "test")
+(boot!)
+(tk-assert "a newer document plays without saving" *profile-readonly*)
+(profile-save!)
+(tk-check "the newer document was not touched"
+          *host-profile*
+          (list (cons "version" 2) (cons "bests" '())))
 
 (tk-report! "gameplay")
 

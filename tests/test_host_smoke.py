@@ -60,6 +60,67 @@ def test_director_paces_a_match():
     assert "LispError" not in r.stderr, r.stderr[-2000:]
 
 
+def test_profile_persists_across_a_real_run(tmp_path):
+    """A real headless session saves on the way out; the file is v1 JSON.
+
+    `--frames` ends the session the way a window close would: the loop
+    notices, saves once, and quits. The profile path is the one new
+    flag, and it is how a test keeps its hands off the player's real
+    config dir.
+    """
+    import json
+
+    profile = tmp_path / "profile.json"
+    r = run_host("--frames", "60", "--autostart", "--profile", str(profile))
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert profile.exists(), "the session quit without saving the profile"
+    doc = json.loads(profile.read_text())
+    assert doc["version"] == 1
+    assert "bests" in doc and "done" in doc, doc
+
+
+def test_profile_round_trips_through_the_real_file(tmp_path):
+    """Write, read back through a fresh host, corrupt, survive.
+
+    Python owns the bytes: one host's write is another host's read, the
+    write is atomic (no half-written file is ever visible), and a
+    corrupt file answers empty with a note instead of an exception.
+    """
+    import json
+
+    import pygame
+
+    import host.pygame_host as ph
+    from lisp.types import NIL, Pair
+
+    path = tmp_path / "profile.json"
+    try:
+        host = ph.PygameHost(headless=True, profile_path=str(path))
+        assert host.read_profile() is NIL, "a missing file is a first boot"
+
+        bests = Pair(Pair("sprint", 123), NIL)
+        doc = Pair(Pair("version", 1), Pair(Pair("bests", bests), NIL))
+        assert host.write_profile(doc) is True
+        assert json.loads(path.read_text()) == {
+            "version": 1, "bests": {"sprint": 123}}
+
+        fresh = ph.PygameHost(headless=True, profile_path=str(path))
+        reread = fresh.read_profile()
+        assert reread is not NIL
+        assert ph._doc_to_python(reread) == {
+            "version": 1, "bests": {"sprint": 123}}
+
+        # The atomic write never leaves its tmp file behind.
+        assert not path.with_suffix(".tmp").exists()
+
+        # And the bad day: garbage bytes answer empty, with a note on
+        # the console — the Scheme side boots fresh, nothing crashes.
+        path.write_text("{ not json")
+        assert fresh.read_profile() is NIL
+    finally:
+        pygame.quit()
+
+
 def test_cheese_and_ultra_boot():
     """The other two modes start a match and run frames without incident."""
     for mode in ("cheese", "ultra"):
@@ -107,7 +168,7 @@ def test_game_env_keeps_a_per_frame_budget():
         pygame.quit()
 
 
-def test_step_budget_is_a_per_frame_ceiling():
+def test_step_budget_is_a_per_frame_ceiling(tmp_path):
     """The mechanism the fix relies on, proved cheaply, on the REAL host:
     `tick!` resets the step counter once per frame, so a ceiling that could
     never carry 120 painted frames as one sum carries each of them — while
@@ -128,14 +189,14 @@ def test_step_budget_is_a_per_frame_ceiling():
 
     pygame.init()
     try:
-        host = ph.PygameHost(headless=True)
+        host = ph.PygameHost(headless=True, profile_path=str(tmp_path / "profile.json"))
         env = ph.make_game_env(host)
         for mod in ["core/rop", "domain/geometry", "domain/board", "domain/bag",
                     "domain/modes", "domain/game", "domain/plan",
                     "domain/telemetry", "domain/director",
                     "rules/commands", "rules/kicks", "rules/scoring",
                     "policies/gravity", "rules/pipeline", "content/campaign",
-                    "content/locale", "presentation/view",
+                    "content/locale", "conductor/profile", "presentation/view",
                     "conductor/effects", "conductor/screens",
                     "conductor/input", "conductor/arcade"]:
             load_lisp(env, SCHEME / (mod + ".scm"))
@@ -216,6 +277,8 @@ def test_painter_paints():
         ("poll-events!", lambda: NIL),
         ("quit-requested?", lambda: False),
         ("boot-config", lambda: NIL),
+        ("read-profile", lambda: NIL),
+        ("write-profile!", lambda doc: True),
         ("held?", lambda n: False),
         ("sfx!", lambda n: None),
         ("quit!", lambda: None),
@@ -230,7 +293,7 @@ def test_painter_paints():
                 "domain/telemetry", "domain/director",
                 "rules/commands", "rules/kicks", "rules/scoring",
                 "policies/gravity", "rules/pipeline", "content/campaign",
-                "content/locale", "presentation/view",
+                "content/locale", "conductor/profile", "presentation/view",
             "conductor/effects", "conductor/screens",
             "conductor/input", "conductor/arcade"]:
         load_lisp(env, SCHEME / (mod + ".scm"))

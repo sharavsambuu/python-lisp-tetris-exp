@@ -20,6 +20,7 @@
 (load "rules/pipeline")
 (load "content/campaign")
 (load "content/locale")
+(load "conductor/profile")
 (load "presentation/view")
 (load "conductor/effects")
 (load "conductor/screens")

@@ -509,126 +509,409 @@
     ;; ---------------------------------------------------------------- ;;
     ;;
     ;; The search cannot clone the world, so the domain lends it pure probes
-    ;; — `landing-y-at` and `column-heights` — and the planner scores the 40
-    ;; placements from the *shape they would leave*, never rebuilding the
+    ;; — `landing-row/hts` and `column-heights` — and the planner scores the
+    ;; 40 placements from the *shape they would leave*, never rebuilding the
     ;; board. Even so the enumeration is more than one frame should pay at
     ;; once, so the search is a stepper: each call scores a few placements
     ;; and answers the symbol `pending` until it is done. The board's
     ;; settled columns do not move while a piece is airborne, so scoring
     ;; across frames is scoring the same board.
+    ;;
+    ;; The stepper has three phases. Pass A scores the forty placements of
+    ;; the falling piece into a cached score vector. Pass B — the
+    ;; lookahead, on unless `--no-lookahead` says otherwise — prices the
+    ;; FUTURE: the top few candidates each get the next piece swept
+    ;; against the board their placement would truly leave (clears
+    ;; collapsed away), and the joint — the final two-piece board, priced
+    ;; once in the heuristic's own currency — picks the plan. A candidate
+    ;; whose own fall leaves little room (a low drop distance) skips
+    ;; pass B — a piece about to land needs the fast 1-ply answer, not a
+    ;; deep one. Selection reads the cached vectors, so killing one
+    ;; candidate never re-scores another.
 
     (define *best-per-frame* 6)  ;; placements scored per call
 
+    ;; The lookahead's knobs: how many top candidates get their future
+    ;; priced, and how many rows of fall a piece needs before the future
+    ;; is worth its budget.
+    (define *ai-lookahead* #t)
+    (define *lookahead-k* 3)
+    (define *lookahead-floor* 6)
+
     (define *search-key* #f)     ;; piece key (lock count + kind) the search opened for
     (define *search-board* #f)   ;; the board identity the cache was read from
+    (define *search-phase* 'sweep) ;; sweep | futures | done
     (define *search-i* 40)       ;; next placement index to score (40 = settled)
-    (define *search-bx* 3)
-    (define *search-brot* 0)
-    (define *search-best* -1000000000)
+    (define *search-scores* #f)  ;; the pass-A score per placement (#f = refused)
     (define *search-hts* #f)     ;; the settled profile, as a vector
     (define *search-rows* 20)
     (define *search-shapes* #f)  ;; the four cell lists, one per rotation
+    (define *search-shapes2* #f) ;; the same, for the NEXT piece (pass B)
+    (define *search-bounds2* #f) ;; each next-shape's (dx-min . dx-max)
+    (define *search-ply2?* #f)   ;; does this piece's future get priced?
+    (define *search-dead* #f)    ;; placements steering proved unreachable
+    (define *search-dead-stamp* 0)
+    (define *search-cands-stamp* -1)
+    (define *search-elite* '())  ;; the top-K indices selection reads
+    (define *search-cands* '())  ;; elite indices still missing their future
+    (define *search-p2-j* 0)     ;; next response index inside the head candidate
+    (define *search-p2-best* #f) ;; the head candidate's best joint so far
+    (define *search-futures* #f) ;; the joint score per elite index
+    (define *search-profs* #f)   ;; each elite index's collapsed post-clear profile
+    (define *search-holes1* #f)  ;; the holes each elite placement buried
+    (define *search-attack1* #f) ;; the rows each elite placement completed
 
     (define (reset-ai!)
       (set! *search-key* #f)
       (set! *search-board* #f)
+      (set! *search-phase* 'sweep)
       (set! *search-i* 40)
-      (set! *search-bx* 3)
-      (set! *search-brot* 0)
-      (set! *search-best* -1000000000)
+      (set! *search-scores* #f)
       (set! *search-hts* #f)
       (set! *search-rows* 20)
       (set! *search-shapes* #f)
+      (set! *search-shapes2* #f)
+      (set! *search-bounds2* #f)
+      (set! *search-ply2?* #f)
+      (set! *search-dead* #f)
+      (set! *search-dead-stamp* 0)
+      (set! *search-cands-stamp* -1)
+      (set! *search-elite* '())
+      (set! *search-cands* '())
+      (set! *search-futures* #f)
+      (set! *search-profs* #f)
+      (set! *search-holes1* #f)
+      (set! *search-attack1* #f)
       ;; The plan belongs to the piece it was made for. A toggle or a new
       ;; match must not inherit the last board's answer.
       (set! *plan-key* #f)
       (set! *plan-board* #f)
       (set! *plan-ready* #f)
+      (set! *plan-slam?* #f)
       (set! *plan-x* 3)
       (set! *plan-rot* 0))
 
     (define (best-placement st ws budget locks)
-      (let ((key (list locks
-                       (if (game-active st) (falling-name (game-active st)) #f))))
-        (when (or (not (equal? key *search-key*))
-                  (not (eq? (game-board st) *search-board*)))
-          (set! *search-i* 0)
-          (set! *search-bx* 3)
-          (set! *search-brot* 0)
-          (set! *search-best* -1000000000)
-          ;; The settled board and the shapes are fixed for this piece's
-          ;; whole life — read them once, not four times a frame. Garbage
-          ;; can move the board under an airborne piece, so the board's
-          ;; identity is part of the key: a new board re-reads the columns.
-          (set! *search-hts* (column-heights (game-board st)))
-          (set! *search-rows* matrix-height)
-          (set! *search-shapes*
-                (map (lambda (rot) (piece-cells (falling-name (game-active st)) rot))
-                     (list 0 1 2 3)))
-          (set! *search-board* (game-board st))
-          (set! *search-key* key))
-        (let loop ((scored 0) (i *search-i*))
-          (cond ((>= i 40)
-                 (set! *search-i* i)
-                 (list *search-bx* *search-brot*))
-                ((>= scored budget)
-                 (set! *search-i* i)
-                 'pending)
-                (else
-                 (let* ((rot (quotient i 10))
-                        (x (remainder i 10))
-                        (shape (list-ref *search-shapes* rot))
-                        (p (game-active st))
-                        ;; The heights form: the precondition still asks
-                        ;; the real board (a wall kick can refuse a
-                        ;; column), but the landing row reads off the
-                        ;; cached columns — no per-row cell lists, no
-                        ;; allocations, forty times a piece.
-                        (ly (if (and p
-                                     (shape-fits-at? (game-board st)
-                                                     shape x (falling-y p)))
-                                (landing-row/hts shape x (falling-y p)
-                                                 *search-hts* *search-rows*)
-                                #f)))
-                   (if (not ly)
-                       ;; Refused placements cost only the crossing: they do
-                       ;; not spend the frame's score budget.
-                       (loop scored (+ i 1))
-                       (let ((score (placement-score ws *search-hts*
-                                                     shape
-                                                     x ly *search-rows*)))
-                         (when (> score *search-best*)
-                           (set! *search-best* score)
-                           (set! *search-bx* x)
-                           (set! *search-brot* rot))
-                         (loop (+ scored 1) (+ i 1))))))))))
+      (if (not (game-active st))
+          #f
+          (let ((key (list locks (falling-name (game-active st)))))
+            (when (or (not (equal? key *search-key*))
+                      (not (eq? (game-board st) *search-board*)))
+              (search-reset! st key))
+            (when (and (eq? *search-phase* 'futures)
+                       *search-ply2?*
+                       (not *search-shapes2*))
+              (build-next-shapes! st))
+            ;; A death in the steering changed the dead list after the
+            ;; candidates were picked: re-pick from the CACHED scores —
+            ;; no placement is scored twice for a steering refusal — and
+            ;; price any newcomer's future.
+            (when (and (not (eq? *search-phase* 'sweep))
+                       (not (= *search-dead-stamp* *search-cands-stamp*)))
+              (pick-candidates!))
+            (case *search-phase*
+              ((sweep)
+               (if (score-sweep! st ws budget)
+                   (begin
+                     (pick-candidates!)
+                     (if (eq? *search-phase* 'done)
+                         (finish!)
+                         'pending))
+                   'pending))
+              ((futures)
+               (if (eq? (price-futures! st ws budget) 'done)
+                   (finish!)
+                   'pending))
+              (else (finish!))))))
+
+    ;; A fresh piece (or a board moved under it): the search opens again.
+    ;; The settled columns, the shapes, the score vector — read or built
+    ;; once, not forty times a frame. Whether the future gets priced is
+    ;; decided here, once: a piece already near its landing spends its
+    ;; frames steering, not speculating.
+    (define (search-reset! st key)
+      (set! *search-i* 0)
+      (set! *search-phase* 'sweep)
+      (set! *search-scores* (make-vector 40 #f))
+      (set! *search-dead* (make-vector 40 #f))
+      (set! *search-dead-stamp* 0)
+      (set! *search-futures* (make-vector 40 #f))
+      (set! *search-profs* (make-vector 40 #f))
+      (set! *search-holes1* (make-vector 40 #f))
+      (set! *search-attack1* (make-vector 40 #f))
+      (set! *search-elite* '())
+      (set! *search-cands* '())
+      (set! *search-shapes2* #f)
+      (set! *search-bounds2* #f)
+      (set! *search-hts* (column-heights (game-board st)))
+      (set! *search-rows* matrix-height)
+      (set! *search-shapes*
+            (map (lambda (rot) (piece-cells (falling-name (game-active st)) rot))
+                 (list 0 1 2 3)))
+      (set! *search-ply2?*
+            (and *ai-lookahead*
+                 (>= (drop-distance st) *lookahead-floor*)))
+      (set! *search-board* (game-board st))
+      (set! *search-key* key))
+
+    ;; Pass A: score placements into the vector until the budget is spent
+    ;; (#f = still working) or the sweep is complete (#t). Refused and dead
+    ;; placements cost only the crossing — they do not spend the budget.
+    (define (score-sweep! st ws budget)
+      (let loop ((scored 0) (i *search-i*))
+        (cond ((>= i 40)
+               (set! *search-i* i)
+               #t)
+              ((>= scored budget)
+               (set! *search-i* i)
+               #f)
+              ((vector-ref *search-dead* i)
+               (loop scored (+ i 1)))
+              (else
+               (let* ((rot (quotient i 10))
+                      (x (remainder i 10))
+                      (shape (list-ref *search-shapes* rot))
+                      (p (game-active st))
+                      ;; The heights form: the precondition still asks
+                      ;; the real board (a wall kick can refuse a
+                      ;; column), but the landing row reads off the
+                      ;; cached columns — no per-row cell lists, no
+                      ;; allocations, forty times a piece.
+                      (ly (if (shape-fits-at? (game-board st)
+                                              shape x (falling-y p))
+                              (landing-row/hts shape x (falling-y p)
+                                               *search-hts* *search-rows*)
+                              #f)))
+                 (if (not ly)
+                     (loop scored (+ i 1))
+                     (let ((score (placement-score ws *search-hts*
+                                                   shape
+                                                   x ly *search-rows*)))
+                       (vector-set! *search-scores* i score)
+                       (loop (+ scored 1) (+ i 1)))))))))
+
+    ;; The board a candidate would truly leave, with the placement's own
+    ;; ledger: the collapsed post-clear profile, the holes it buried, the
+    ;; rows it completed. Built once per elite candidate, then cached —
+    ;; the future's arithmetic reads all three.
+    (define (candidate-profile i)
+      (or (vector-ref *search-profs* i)
+          (let* ((rot (quotient i 10))
+                 (x (remainder i 10))
+                 (shape (list-ref *search-shapes* rot))
+                 (ly (landing-row/hts shape x 0 *search-hts* *search-rows*))
+                 (raised (raised-profile *search-hts* shape x ly *search-rows*))
+                 (prof (collapsed-profile raised
+                                          (completed-rows *search-hts* raised))))
+            (vector-set! *search-profs* i prof)
+            (vector-set! *search-holes1* i
+                         (new-holes *search-hts* shape x ly *search-rows*))
+            (vector-set! *search-attack1* i
+                         (completed-rows *search-hts* raised))
+            prof)))
+
+    ;; The future's judgment, in the heuristic's own currency: the FINAL
+    ;; board — this placement's collapse carrying the response piece —
+    ;; priced exactly as the planner prices a leaf, with this
+    ;; placement's holes and clears carried into the ledger. Priced once,
+    ;; on the true final board: the additive form (own score + response
+    ;; score) double-counts the level reward and re-pays height the
+    ;; placement already banked.
+    (define (joint-score ws i shape2 x2 ly2)
+      (let* ((prof (candidate-profile i))
+             (raised2 (raised-profile prof shape2 x2 ly2 *search-rows*))
+             (attack2 (completed-rows prof raised2))
+             (final (collapsed-profile raised2 attack2))
+             (holes2 (new-holes prof shape2 x2 ly2 *search-rows*)))
+        (- (+ (* (w-cleared ws) (min-of final))
+              (* (w-attack ws)
+                 (+ (vector-ref *search-attack1* i) attack2)))
+           (+ (* (w-holes ws)
+                 (+ (vector-ref *search-holes1* i) holes2))
+              (* (w-bumpiness ws) (bumpiness final))
+              (* (w-wells ws) (wells-sum final *search-rows*))
+              (* (w-roof ws) (roofline final))))))
+
+    ;; The leaf the candidate alone leaves — the joint's answer when the
+    ;; response piece has no legal placement anywhere. Same currency, so
+    ;; a candidate with a priced future and one without compare fairly.
+    (define (leaf-score ws i)
+      (let ((prof (candidate-profile i)))
+        (- (+ (* (w-cleared ws) (min-of prof))
+              (* (w-attack ws) (vector-ref *search-attack1* i)))
+           (+ (* (w-holes ws) (vector-ref *search-holes1* i))
+              (* (w-bumpiness ws) (bumpiness prof))
+              (* (w-wells ws) (wells-sum prof *search-rows*))
+              (* (w-roof ws) (roofline prof))))))
+
+    ;; The top-K scored, still-eligible placements, by score. Their
+    ;; indices are the selection's domain; the ones without a priced
+    ;; future become the pass-B work list.
+    (define (pick-candidates!)
+      (set! *search-cands-stamp* *search-dead-stamp*)
+      (let extract ((n 0) (elite '()) (used '()))
+        (if (or (>= n *lookahead-k*) (>= (length used) 40))
+            (begin
+              (set! *search-elite* (reverse elite))
+              (if *search-ply2?*
+                  (let ((work (filter (lambda (i)
+                                        (not (vector-ref *search-futures* i)))
+                                      (reverse elite))))
+                    (set! *search-cands* work)
+                    (set! *search-p2-j* 0)
+                    (set! *search-p2-best* #f)
+                    (set! *search-phase*
+                          (if (null? work) 'done 'futures)))
+                  (begin
+                    (set! *search-cands* '())
+                    (set! *search-phase* 'done))))
+            (let scan ((i 0) (bi #f) (bs #f))
+              (cond ((>= i 40)
+                     (if bi
+                         (extract (+ n 1) (cons bi elite) (cons bi used))
+                         (begin
+                           (set! *search-elite* (reverse elite))
+                           (set! *search-cands* '())
+                           (set! *search-phase* 'done))))
+                    ((and (vector-ref *search-scores* i)
+                          (not (vector-ref *search-dead* i))
+                          (not (member i used))
+                          (or (not bs)
+                              (> (vector-ref *search-scores* i) bs)))
+                     (scan (+ i 1) i (vector-ref *search-scores* i)))
+                    (else (scan (+ i 1) bi bs)))))))
+
+    ;; Pass B: the head candidate's joint, budgeted — the next piece's
+    ;; forty placements swept against the candidate's collapsed profile,
+    ;; each priced as the final board it would leave. Refused responses
+    ;; (out of bounds, poking out of the well) cost only the crossing. A
+    ;; candidate with NO legal response keeps its own leaf as the joint:
+    ;; the future taught it nothing, and the comparison stays fair.
+    (define (price-futures! st ws budget)
+      (if (null? *search-cands*)
+          'done
+          (let ((i (car *search-cands*)))
+            (let loop ((scored 0) (j *search-p2-j*))
+              (cond ((>= j 40)
+                     (vector-set! *search-futures* i
+                                  (or *search-p2-best* (leaf-score ws i)))
+                     (set! *search-cands* (cdr *search-cands*))
+                     (set! *search-p2-j* 0)
+                     (set! *search-p2-best* #f)
+                     (if (null? *search-cands*) 'done 'pending))
+                    ((>= scored budget)
+                     (set! *search-p2-j* j)
+                     'pending)
+                    (else
+                     (let* ((rot2 (quotient j 10))
+                            (x2 (remainder j 10))
+                            (bounds (list-ref *search-bounds2* rot2)))
+                       (if (and (>= (+ x2 (car bounds)) 0)
+                                (<= (+ x2 (cdr bounds))
+                                    (- (vector-length *search-hts*) 1)))
+                           (let* ((shape2 (list-ref *search-shapes2* rot2))
+                                  (ly2 (landing-row/hts shape2 x2 0
+                                                        (candidate-profile i)
+                                                        *search-rows*)))
+                             (if (< ly2 0)
+                                 (loop scored (+ j 1))
+                                 (let ((s2 (joint-score ws i shape2
+                                                        x2 ly2)))
+                                   (when (or (not *search-p2-best*)
+                                             (> s2 *search-p2-best*))
+                                     (set! *search-p2-best* s2))
+                                   (loop (+ scored 1) (+ j 1)))))
+                           (loop scored (+ j 1))))))))))
+
+    ;; The plan. With the future priced, the best JOINT over the elite —
+    ;; the final two-piece board each candidate leads to, priced once in
+    ;; the heuristic's own currency. Without it, the best raw score,
+    ;; exactly as the one-ply planner always chose. #f when nothing is
+    ;; eligible: every placement refused or killed.
+    (define (finish!)
+      (let ((pick (if *search-ply2?*
+                      (lambda (i) (vector-ref *search-futures* i))
+                      (lambda (i) (vector-ref *search-scores* i)))))
+        (let loop ((rest *search-elite*) (best #f))
+          (if (null? rest)
+              (if best (list (car best) (cadr best)) #f)
+              (let* ((i (car rest))
+                     (v (pick i)))
+                (loop (cdr rest)
+                      (if (or (not best) (> v (caddr best)))
+                          (list (remainder i 10) (quotient i 10) v)
+                          best)))))))
+
+    ;; The next piece's shapes and their lateral bounds — pass B sweeps
+    ;; them against pure profiles, so the bounds check is the planner's
+    ;; own (the real board never sees the response piece).
+    (define (build-next-shapes! st)
+      (let ((n2 (car (bag-peek (game-bag st) 1))))
+        (set! *search-shapes2*
+              (map (lambda (rot) (piece-cells n2 rot)) (list 0 1 2 3)))
+        (set! *search-bounds2*
+              (map (lambda (shape)
+                     (let loop ((cs shape) (lo 100) (hi -100))
+                       (if (null? cs)
+                           (cons lo hi)
+                           (let ((dx (car (car cs))))
+                             (loop (cdr cs) (min lo dx) (max hi dx))))))
+                   *search-shapes2*))))
 
     ;; Plan state, then steering: one plan per piece, one command a frame.
     (define *plan-key* #f)
     (define *plan-board* #f)  ;; the board the ready plan was made for
     (define *plan-ready* #f)
+    (define *plan-slam?* #f)  ;; no placement anywhere: end this piece
     (define *plan-x* 3)
     (define *plan-rot* 0)
     (define *lock-count* 0)   ;; edge-side counter, fed by the journal
     (define *r-lock-count* 0) ;; the duel's right side keeps its own
 
+    ;; One step toward the plan. A rotation takes the SHORTER way around
+    ;; (CW when that is within two steps, CCW otherwise) and tries the
+    ;; other direction when the first refuses — a tight slot does not
+    ;; care which way the hand came from. A refused step answers #f: the
+    ;; caller kills the plan, it never hard-drops a healthy piece.
     (define (steer-to st x rot)
       (let* ((p (game-active st))
-             (px (falling-x p)))
-        (cond ((not (= (falling-rot p) rot))
-               (let ((r (apply-command st (rotate-cw))))
-                 (if (result-ok? r) (ok-value r) (ai-drop st))))
+             (px (falling-x p))
+             (pr (falling-rot p)))
+        (cond ((not (= pr rot))
+               (let* ((dcw (modulo (- rot pr) 4))
+                      (cw? (<= dcw 2)))
+                 (let ((r (apply-command st
+                                         (if cw? (rotate-cw) (rotate-ccw)))))
+                   (if (result-ok? r)
+                       (ok-value r)
+                       (let ((r2 (apply-command st
+                                                (if cw?
+                                                    (rotate-ccw)
+                                                    (rotate-cw)))))
+                         (if (result-ok? r2) (ok-value r2) #f))))))
               ((< px x)
                (let ((r (apply-command st (right))))
-                 (if (result-ok? r) (ok-value r) (ai-drop st))))
+                 (if (result-ok? r) (ok-value r) #f)))
               ((> px x)
                (let ((r (apply-command st (left))))
-                 (if (result-ok? r) (ok-value r) (ai-drop st))))
+                 (if (result-ok? r) (ok-value r) #f)))
               (else (ai-drop st)))))
 
     (define (ai-drop st)
       (let ((r (apply-command st (hard-drop))))
         (if (result-ok? r) (ok-value r) st)))
+
+    ;; The steering proved the plan's target unreachable from where
+    ;; gravity has let the piece fall to (a ledge slid under it, a kick
+    ;; refused). The target dies — skipped by every later selection for
+    ;; this piece, without spending the score budget — and the search
+    ;; re-plans around it. The old steering hard-dropped here instead:
+    ;; the planner's right answer executed as a buried hole.
+    (define (kill-plan!)
+      (when *search-dead*
+        (vector-set! *search-dead* (+ (* *plan-rot* 10) *plan-x*) #t)
+        (set! *search-dead-stamp* (+ *search-dead-stamp* 1)))
+      (set! *plan-ready* #f))
 
     ;; One AI step against an ARBITRARY match, answering the new match:
     ;; the solo path drives the player's board, the duel drives the
@@ -642,20 +925,41 @@
                   (not (eq? (game-board st) *plan-board*)))
           (set! *plan-key* key)
           (set! *plan-board* (game-board st))
-          (set! *plan-ready* #f))
+          (set! *plan-ready* #f)
+          (set! *plan-slam?* #f))
         (when (not *plan-ready*)
           (let ((plan (best-placement st ws budget locks)))
             (when (not (eq? plan 'pending))
-              (set! *plan-x* (car plan))
-              (set! *plan-rot* (cadr plan))
-              (set! *plan-ready* #t))))
-        (if *plan-ready*
-            (steer-to st *plan-x* *plan-rot*)
-            st)))
+              ;; #f: every placement is refused or dead — the piece has
+              ;; nowhere good to go, and the fastest kind thing is the
+              ;; slam that brings the next one.
+              (if plan
+                  (begin
+                    (set! *plan-x* (car plan))
+                    (set! *plan-rot* (cadr plan))
+                    (set! *plan-ready* #t))
+                  (set! *plan-slam?* #t)))))
+        (cond (*plan-slam?* (ai-drop st))
+              (*plan-ready*
+               (or (steer-to st *plan-x* *plan-rot*)
+                   (begin (kill-plan!) st)))
+              (else st))))
 
     (define (ai-step!)
       (when (and *ai* (phase-playing? *st*) (game-active *st*))
-        (set! *st* (ai-step-match! *st* *weights* *best-per-frame* *lock-count*))))
+        ;; The lookahead's price is not wall time — the budget bounds the
+        ;; frame either way — it is LATENCY: a plan that needs 160
+        ;; scorings at 6 a frame lands ~27 frames into a piece's life,
+        ;; and a race feels that. With the future priced, the solo AI
+        ;; spends its budget three times as fast: the plan lands in ~9
+        ;; frames — the one-ply plan's own cadence — for triple the
+        ;; per-frame interpreter cost, which the frame budget has the
+        ;; headroom for and the race cannot feel.
+        (set! *st* (ai-step-match! *st* *weights*
+                                   (if *ai-lookahead*
+                                       (* 3 *best-per-frame*)
+                                       *best-per-frame*)
+                                   *lock-count*))))
     ;; One director step: read the pressure, ask the core for a pace, and
     ;; speak only when there is something to say — a change past the
     ;; threshold, after the cooldown. The decision is journaled like any
@@ -864,6 +1168,11 @@
           (if seed (set! *seed* seed) #f)
           (if ai (set! *ai* #t) #f)
           (if director (set! *director* #t) #f)
+          ;; The lookahead is on by default; the flag carried #f to turn
+          ;; it off. assq, not opt: an absent key and a #f value must
+          ;; not be the same answer here.
+          (let ((entry (assq 'lookahead cfg)))
+            (if entry (set! *ai-lookahead* (cdr entry)) #f))
           (if locale (set-locale! (string->symbol locale)) #f)
           (cond (duel
                  ;; A --duel persona name boots straight into the fight.

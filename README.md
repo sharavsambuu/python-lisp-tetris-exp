@@ -17,11 +17,14 @@ pip install -r requirements.txt
 
 python -m host                 # the game, windowed — title menu first
 
-# headless, straight into a match, seeded, steered by the one-ply AI:
+# headless, straight into a match, seeded, steered by the AI:
 python -m host --headless --frames 900 --autostart --mode sprint --seed 7 --ai
 
 # the same, with the director pacing the match toward its pressure band:
 python -m host --headless --frames 900 --autostart --mode sprint --seed 7 --ai --director
+
+# the AI plans this piece only (no next-piece lookahead):
+python -m host --headless --frames 900 --autostart --mode sprint --seed 7 --ai --no-lookahead
 ```
 
 Modes: `marathon` (endless), `sprint` (`target-lines`), `ultra`
@@ -151,8 +154,10 @@ Said plainly, because a demo that hides its ceiling is a sales pitch:
 
 - **Interpreter speed.** Every frame runs through a pure-Python
   tree-walking interpreter: a painted frame costs a few thousand
-  interpreter steps, an AI-assisted frame a few tens of thousands. That
-  is fine at Tetris's pace and wrong for anything that needs real
+  interpreter steps, an AI-assisted frame a few tens of thousands (the
+  next-piece lookahead triples the planner's per-frame budget — a
+  smarter plan bought with frame steps, not wall time). That is fine
+  at Tetris's pace and wrong for anything that needs real
   per-frame math — physics, many sprites, shaders. The host's painting
   and event pump are native; the *game* is not.
 - **The step budget is per frame.** The DSL's step budget is a hang

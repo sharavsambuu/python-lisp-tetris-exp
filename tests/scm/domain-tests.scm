@@ -427,6 +427,28 @@
                (peak-side (placement-score roofy hs cells 0 5 20)))
           (> flat-side peak-side)))
 
+;; The collapse: what a completed row count does to a profile. The
+;; bottom `full` rows were full in EVERY column, so the collapse takes
+;; the same count from every column — the honest board the next piece
+;; lands on, and the lookahead's ground truth.
+(assert "a zero collapse is the same vector, not a copy"
+        (let ((raised (vector 5 7 5 5 5 5 5 5 5 5)))
+          (eq? (collapsed-profile raised 0) raised)))
+(check (collapsed-profile (vector 3 3 3 3 3 3 3 3 3 3) 3)
+       (vector 0 0 0 0 0 0 0 0 0 0))
+(check (collapsed-profile (vector 5 7 5 5 5 5 5 5 5 5) 2)
+       (vector 3 5 3 3 3 3 3 3 3 3))
+;; The lookahead's composition: raise, count the completed rows, collapse
+;; — and the collapsed minimum lands back at the pre-placement minimum.
+(assert "raise, count, collapse — the round trip lands flat"
+        (let* ((hs (vector 0 2 2 2 2 2 2 2 2 2))
+               (raised (vector 5 7 5 5 5 5 5 5 5 5))
+               (full (completed-rows hs raised))
+               (collapsed (collapsed-profile raised full)))
+          (and (= full 5)
+               (= (min-of collapsed) (min-of hs))
+               (equal? collapsed (vector 0 2 0 0 0 0 0 0 0 0)))))
+
 ;; --------------------------------------------------------------------- ;;
 ;;  campaign — content as data, and the progress it carries               ;;
 ;; --------------------------------------------------------------------- ;;

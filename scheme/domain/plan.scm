@@ -36,6 +36,7 @@
           raise-copy
           raised-profile
           raised-heights
+          collapsed-profile
           new-holes
           completed-rows
           placement-score)
@@ -175,6 +176,24 @@
     ;; upstream; here they are counted, so a style can prefer them.
     (define (completed-rows heights raised)
       (- (min-of raised) (min-of heights)))
+
+    ;; The board AFTER the placement's clears: the `full` bottom rows were
+    ;; complete in every column, so the collapse takes the same count from
+    ;; every column, floored at the pre-existing minimum (never below zero).
+    ;; This is the honest profile the NEXT piece lands on — the 1.5-ply
+    ;; search scores its responses here, where `min-of raised` would lie
+    ;; by exactly the rows that just left.
+    (define (collapsed-profile raised full)
+      (if (<= full 0)
+          raised
+          (let ((out (vector-copy raised)))
+            (let loop ((i 0))
+              (if (< i (vector-length out))
+                  (begin
+                    (vector-set! out i
+                                 (max 0 (- (vector-ref out i) full)))
+                    (loop (+ i 1)))
+                  out)))))
 
     ;; Higher is better. One allocation per call (the raised profile);
     ;; the roof term prices the tallest column when the weights carry a

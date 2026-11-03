@@ -275,7 +275,7 @@ class PygameHost:
                  mode: str | None = None, level: int | None = None,
                  seed: int | None = None, ai: bool = False,
                  director: bool = False, locale: str | None = None,
-                 duel: str | None = None,
+                 duel: str | None = None, no_lookahead: bool = False,
                  profile_path: str | None = None) -> None:
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -294,6 +294,7 @@ class PygameHost:
         self.director = director
         self.locale = locale
         self.duel = duel
+        self.no_lookahead = no_lookahead
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
@@ -462,6 +463,8 @@ class PygameHost:
             pairs.append(pair("director", True))
         if self.duel:
             pairs.append(pair("duel", self.duel))
+        if self.no_lookahead:
+            pairs.append(pair("lookahead", False))
         if self.autostart:
             pairs.append(pair("autostart", True))
         if self.locale:
@@ -764,6 +767,9 @@ def main(argv: list[str] | None = None) -> int:
                              "config dir's scheme-tetris/profile.json)")
     parser.add_argument("--ai", action="store_true",
                         help="the one-ply planner plays")
+    parser.add_argument("--no-lookahead", action="store_true",
+                        help="the AI skips the next-piece lookahead and "
+                             "plans the current piece only")
     parser.add_argument("--director", action="store_true",
                         help="the director paces the match to hold the stack "
                              "in its pressure band")
@@ -777,7 +783,8 @@ def main(argv: list[str] | None = None) -> int:
                       autostart=args.autostart, play_script=args.play,
                       mode=args.mode, level=args.level, seed=args.seed,
                       ai=args.ai, director=args.director, locale=args.locale,
-                      duel=args.duel, profile_path=args.profile)
+                      duel=args.duel, no_lookahead=args.no_lookahead,
+                      profile_path=args.profile)
     env = make_game_env(host)
     from lisp import load_lisp
 

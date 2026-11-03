@@ -493,6 +493,62 @@
              (not (equal? (bag-queue (game-bag *st*)) dealt))))
 
 ;; --------------------------------------------------------------------- ;;
+;;  the AI's steering discipline                                           ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The rotation takes the shorter way around: three steps of CW is one
+;; step of CCW, and the hand knows it.
+(tk-section "the AI's steering discipline")
+
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let ((p (game-active *st*)))
+  (set! *st* (steer-to *st* (falling-x p) 3))
+  (tk-check "a three-step turn went the short way"
+            (falling-rot (game-active *st*)) 3))
+
+;; A refused steering step kills the PLAN, never the piece. The old
+;; steering hard-dropped here instead — the planner's right answer
+;; executed as a buried hole whenever gravity slid a ledge under the
+;; traverse. The wall below blocks the leftward path at the piece's
+;; height; the plan asks for the far side; the AI must re-plan, and the
+;; piece must still be airborne.
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let* ((wall (let loop ((bd (game-board *st*)) (ys '(8 9 10 11 12 13 14 15 16 17 18 19)))
+               (if (null? ys)
+                   bd
+                   (loop (board-place bd 'g (list (cons 6 (car ys))))
+                         (cdr ys))))))
+  (set! *st* (game-with *st*
+                        board: wall
+                        active: (make-falling 'o 7 15 0))))
+(best-placement *st* *weights* 40 *lock-count*)  ; the search opens for this piece
+(set! *plan-key* (list *lock-count* 'o))
+(set! *plan-board* (game-board *st*))
+(set! *plan-x* 0)
+(set! *plan-rot* 0)
+(set! *plan-ready* #t)
+(let ((piece (game-active *st*)))
+  (set! *st* (ai-step-match! *st* *weights* 6 *lock-count*))
+  (tk-assert "a blocked plan did not slam the piece"
+             (and (game-active *st*)
+                  (= (falling-y (game-active *st*)) (falling-y piece))))
+  (tk-assert "the dead target was marked"
+             (vector-ref *search-dead* 0))
+  (tk-assert "the plan re-opened" (not *plan-ready*)))
+
+;; The --no-lookahead path: the same sprint, planned one piece at a
+;; time, still wins — the flag is an honest off switch, not a wish.
+(boot-into! 'sprint '((target-lines 2)))
+(set! *ai-lookahead* #f)
+(set! *ai* #t)
+(reset-ai!)
+(host-run-while-playing! 2400)
+(tk-check "the one-ply AI finished the sprint too" (phase) 'won)
+(set! *ai-lookahead* #t)
+
+;; --------------------------------------------------------------------- ;;
 ;;  the profile — the settle was a save, and a fresh boot reads it back   ;;
 ;; --------------------------------------------------------------------- ;;
 

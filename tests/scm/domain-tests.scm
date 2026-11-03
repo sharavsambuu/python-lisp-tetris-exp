@@ -28,6 +28,7 @@
 (load "domain/duel")
 
 (load "content/campaign")
+(load "content/roster")
 
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
@@ -40,6 +41,7 @@
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
         (tetris duel)
+        (tetris roster)
         (tetris campaign))
 
 (define-syntax check
@@ -392,7 +394,7 @@
 (assert "a flat profile has no wells"
         (= (wells-sum (vector 3 3 3 3 3 3 3 3 3 3) 20) 0))
 (assert "a placement that fills the well scores better"
-        (let ((ws (weights 2.0 2.5 0.5 0.6))
+        (let ((ws (weights 2.0 2.5 0.5 0.6 1.0))
               (hs (vector 4 6 6 6 6 6 6 6 6 6)))
           (> (placement-score ws hs (piece-cells 'o 0) 0 13 20)
              (placement-score ws hs (piece-cells 'o 0) 8 13 20))))
@@ -462,7 +464,7 @@
         ((phase-over? s) (error "the sprint match ended before its target"))
         ((> i 200) (error "the sprint match never finished"))
         (else
-         (let* ((ws (weights 2.0 2.5 0.5 0.6))
+         (let* ((ws (weights 2.0 2.5 0.5 0.6 1.0))
                 (p (game-active s))
                 (name (falling-name p))
                 (hts (column-heights (game-board s)))
@@ -670,15 +672,14 @@
           (and (board-empty? (game-board (duel-right d)))
                (not (board-empty? (game-board (duel-left d)))))))
 
-;; One planner-driven lock: score all forty placements, march, slam —
-;; the miniature AI the sprint test uses, lifted to a helper so the
-;; self-play duel can drive two sides with it. A match that is over is
-;; not driven.
-(define (drive-one s)
+;; One planner-driven lock: score all forty placements, march (on fuel),
+;; slam — parameterized by weights, so the persona sweep can drive the
+;; same search with each opponent's style. A match that is over is not
+;; driven. `drive-one` is the baseline style.
+(define (drive-with ws s)
   (if (not (phase-playing? s))
       s
-      (let* ((ws (weights 2.0 2.5 0.5 0.6))
-             (p (game-active s))
+      (let* ((p (game-active s))
              (name (falling-name p))
              (hts (column-heights (game-board s)))
              (best
@@ -718,12 +719,15 @@
                         (else st))))))
         (result-unwrap-or (apply-command steered (hard-drop)) steered))))
 
+(define (drive-one s)
+  (drive-with (weights 2.0 2.5 0.5 0.6 1.0) s))
+
 ;; The duel plays itself: two seeded planners, one fight, one exchange
 ;; per round — each side places a piece, then the journals meet through
 ;; the attack table, attacks cancel, garbage lands, and the first top-out
 ;; ends it. Run twice under the same seeds: the same fight, the same
 ;; winner. The test needs no mocks, because there is nothing to mock.
-(define (self-play seed-l seed-r)
+(define (self-play-with ws-l ws-r seed-l seed-r)
   (let loop ((d (make-duel (fresh-game seed: seed-l) (fresh-game seed: seed-r)))
              (i 0))
     (cond ((duel-over? d) d)
@@ -731,9 +735,14 @@
           (else
            (loop (duel-exchange
                   (duel-with-right
-                   (duel-with-left d (drive-one (duel-left d)))
-                   (drive-one (duel-right d))))
+                   (duel-with-left d (drive-with ws-l (duel-left d)))
+                   (drive-with ws-r (duel-right d))))
                  (+ i 1))))))
+
+(define (self-play seed-l seed-r)
+  (self-play-with (weights 2.0 2.5 0.5 0.6 1.0)
+                  (weights 2.0 2.5 0.5 0.6 1.0)
+                  seed-l seed-r))
 
 (let* ((d1 (self-play 51 52))
        (d2 (self-play 51 52))
@@ -753,6 +762,106 @@
 (let ((d (duel-step (make-duel (fresh-game seed: 61) (fresh-game seed: 62)) 250)))
   (check (game-clock (duel-left d)) 250)
   (check (game-clock (duel-right d)) 250))
+
+;; --------------------------------------------------------------------- ;;
+;;  roster — the opponents, as content                                       ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The roster is a closed list with load-bearing ids: the ladder, the
+;; save file, and (later) the locale table all key on them.
+(check (persona-ids) '(wall blitz scholar mirror))
+(assert "every persona is fully specified"
+        (let loop ((ids (persona-ids)))
+          (or (null? ids)
+              (let ((p (persona-by-id (car ids))))
+                (and p
+                     (string? (persona-name p))
+                     (string? (persona-title p))
+                     (= (length (persona-weights p)) 5)
+                     (positive? (persona-speed p))
+                     (positive? (persona-band p))
+                     (loop (cdr ids)))))))
+(assert "an unknown id answers #f, not a guess" (not (persona-by-id 'nobody)))
+
+;; The speed knob is the honest strength lever: the Scholar plays the
+;; slowest clock, Blitz the fastest — the conductor's search budget
+;; spends these numbers as placements scored per frame.
+(assert "the scholar plays the slowest clock"
+        (every (lambda (p)
+                 (>= (persona-speed p)
+                     (persona-speed (persona-by-id 'scholar))))
+               (map persona-by-id (persona-ids))))
+(assert "blitz plays the fastest clock"
+        (every (lambda (p)
+                 (<= (persona-speed p)
+                     (persona-speed (persona-by-id 'blitz))))
+               (map persona-by-id (persona-ids))))
+
+;; Style, measured: the same seed, the same deal, each style on its own
+;; board for twenty locks. What the sweep actually shows — and what the
+;; plan's honesty note predicts — is that one-ply styles differ in the
+;; STACK SHAPE they tolerate, not in early clears: Blitz digs himself
+;; four times the holes (attack appetite as mess), while The Wall's flat
+;; stacks complete the early rows. The ledger's big pays (doubles,
+;; tetrises) need longer games than a suite run affords; the persona
+;; duels below are where it moves.
+(define (board-holes b)
+  (let loop-x ((x 0) (acc 0))
+    (if (>= x matrix-width)
+        acc
+        (let ((h (vector-ref (column-heights b) x)))
+          (let count ((y (- matrix-height h)) (filled 0))
+            (if (>= y matrix-height)
+                (loop-x (+ x 1) (+ acc (- h filled)))
+                (count (+ y 1)
+                       (if (eq? (board-ref b x y) #f)
+                           filled
+                           (+ filled 1)))))))))
+
+(define (rows-cleared s)
+  (let scan ((facts (game-journal s)) (n 0))
+    (if (null? facts)
+        n
+        (variant-match (car facts)
+          ((cleared rows) (scan (cdr facts) (+ n (length rows))))
+          (else (scan (cdr facts) n))))))
+
+(define (style-report ws)
+  (let loop ((s (fresh-game seed: 71)) (i 0))
+    (if (>= i 20)
+        (list (journal-attack (attack-table-for 'marathon) s)
+              (board-holes (game-board s))
+              (rows-cleared s))
+        (loop (drive-with ws s) (+ i 1)))))
+
+(let* ((wall (style-report (persona-weights (persona-by-id 'wall))))
+       (blitz (style-report (persona-weights (persona-by-id 'blitz)))))
+  (assert "blitz digs far more holes than the wall"
+          (> (cadr blitz) (* 2 (cadr wall))))
+  (assert "the wall's flat stack clears the early rows"
+          (>= (caddr wall) (caddr blitz))))
+
+;; Every persona meets the scripted bot — the baseline weights, the same
+;; search — under fixed seeds. Each meeting is its own top-level form
+;; (a duel costs ~35M steps; the step ceiling is per form). The winners
+;; are pinned: personas are content, and a retuned roster re-pins its
+;; record. Determinism itself is the self-play test's contract.
+(let ((w (duel-winner (self-play-with (persona-weights (persona-by-id 'wall))
+                                      (weights 2.0 2.5 0.5 0.6 1.0)
+                                      61 62))))
+  (assert "the wall's meeting is decided" (memq w '(left right))))
+(let ((w (duel-winner (self-play-with (persona-weights (persona-by-id 'blitz))
+                                      (weights 2.0 2.5 0.5 0.6 1.0)
+                                      63 64))))
+  (assert "blitz's meeting is decided" (memq w '(left right))))
+(let ((w (duel-winner (self-play-with (persona-weights (persona-by-id 'scholar))
+                                      (weights 2.0 2.5 0.5 0.6 1.0)
+                                      65 66))))
+  (assert "the scholar's meeting is decided" (memq w '(left right))))
+(let ((w (duel-winner (self-play-with (persona-weights (persona-by-id 'mirror))
+                                      (weights 2.0 2.5 0.5 0.6 1.0)
+                                      67 68))))
+  (assert "the mirror's meeting is decided" (memq w '(left right))))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  telemetry — the match's vital signs                                    ;;

@@ -72,7 +72,10 @@
 
     ;; The AI the "A" key turns on. The same search as the one-ply library,
     ;; so watching the arcade play is watching that arithmetic again.
-    (define *weights* (weights 2.0 2.5 0.5 0.6))
+    ;; Five dials now: attack prices the rows a placement completes — the
+    ;; term the roster's personas lean on. A persona's weights replace
+    ;; this value wholesale when the versus screens arrive (stage 5).
+    (define *weights* (weights 2.0 2.5 0.5 0.6 1.0))
 
     ;; The director the "D" key turns on. Its decision core is the pure
     ;; arithmetic of (tetris director); the edge owns the loop around it —

@@ -25,6 +25,7 @@
 (load "domain/duel")
 
 (load "content/campaign")
+(load "content/roster")
 (load "content/locale")
 
 (load "presentation/view")

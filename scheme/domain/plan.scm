@@ -26,6 +26,7 @@
           w-holes
           w-bumpiness
           w-wells
+          w-attack
           min-of
           roofline
           bumpiness
@@ -34,20 +35,24 @@
           raise-copy
           raised-heights
           new-holes
+          completed-rows
           placement-score)
 
   (begin
-    ;; Weights: (cleared holes bumpiness wells). `cleared` is the height of
+    ;; Weights: (cleared holes bumpiness wells attack). `cleared` is the height of
     ;; the *lowest* column after the placement — keeping the roofline low is
-    ;; what keeps the game alive; the other three are penalties. They are
-    ;; data, so a caller can publish its own.
-    (define (weights cleared holes bumpiness wells)
-      (list cleared holes bumpiness wells))
+    ;; what keeps the game alive; the next three are penalties; `attack`
+    ;; prices the rows a placement completes *now* — the style term that
+    ;; makes a Blitz out of the same forty placements. They are data, so
+    ;; a caller (a persona, a mode, the edge) can publish its own.
+    (define (weights cleared holes bumpiness wells attack)
+      (list cleared holes bumpiness wells attack))
 
     (define (w-cleared ws)   (list-ref ws 0))
     (define (w-holes ws)     (list-ref ws 1))
     (define (w-bumpiness ws) (list-ref ws 2))
     (define (w-wells ws)     (list-ref ws 3))
+    (define (w-attack ws)    (list-ref ws 4))
 
     ;; The smallest column height — the *cleared* height of a profile.
     (define (min-of v)
@@ -136,12 +141,25 @@
                     (let ((top (- rows (vector-ref heights i))))
                       (loop (+ i 1) (+ n2 (max 0 (- top rlo 1)))))))))))
 
+    ;; The rows this placement completes outright. A row is complete when
+    ;; every column reaches it, so the count is exactly the rise of the
+    ;; profile's minimum — before the clear collapses anything, which the
+    ;; planner does not model. The duel's attack table prices these events
+    ;; upstream; here they are counted, so a style can prefer them.
+    (define (completed-rows heights raised)
+      (- (min-of raised) (min-of heights)))
+
     ;; Higher is better.
     (define (placement-score ws heights cells x ly rows)
       (let* ((raised (raised-heights heights cells x ly rows))
              (cleared (min-of raised))
-             (holes (new-holes heights cells x ly rows)))
-        (- (* (w-cleared ws) cleared)
+             (holes (new-holes heights cells x ly rows))
+             (attack (completed-rows heights raised)))
+        ;; The shape of the judgment: rewards on one side, penalties on
+        ;; the other. `attack` is the persona's appetite — a high weight
+        ;; buys rows this piece, at the price the penalties name.
+        (- (+ (* (w-cleared ws) cleared)
+              (* (w-attack ws) attack))
            (+ (* (w-holes ws) holes)
               (* (w-bumpiness ws) (bumpiness raised))
               (* (w-wells ws) (wells-sum raised rows)))))))

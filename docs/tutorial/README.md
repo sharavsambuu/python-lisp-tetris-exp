@@ -74,6 +74,7 @@ smaller game in this style, and every technique will be something you have
 | # | Chapter | You learn |
 |---|---------|-----------|
 | 18 | [The duel](18-the-duel.md) | Garbage as a domain arrow from the match's own random stream, the attack table as data, the offset rule, the duel as a pure value, AI-vs-AI self-play under a seed |
+| 19 | [The roster](19-the-roster.md) | Opponents as content, the planner's style term, the speed knob as the honest difficulty lever, personalities pinned by a seeded sweep |
 
 
 ## What the root README flexes → where the series teaches it

@@ -22,6 +22,7 @@
           board-place
           full-rows
           board-clear
+          board-raise
           column-heights
           board-cells
           board-empty?)
@@ -110,6 +111,34 @@
                 (vector-set! fresh i (car rows))
                 (loop (cdr rows) (- i 1)))))
         (values fresh n)))
+
+    ;; A row of garbage: every column inked, one hole at `hole`. The 'g
+    ;; name is the settled garbage cell every reader already speaks — the
+    ;; cheese rows are 'g, and `garbage-count` folds over exactly it.
+    (define (garbage-row hole)
+      (let ((row (make-vector matrix-width 'g)))
+        (vector-set! row hole #f)
+        row))
+
+    ;; The board with garbage pushed in from the bottom, one row per column
+    ;; in `holes` (bottom-first). Everything settled shifts up by that many
+    ;; rows; whatever the shift pushes past the ceiling falls off the top —
+    ;; the caller reads a top-out from the next spawn refusal, not from
+    ;; here. Pure like its siblings: the input board is untouched, and the
+    ;; shifted rows are shared the way `board-clear` shares its keeps.
+    (define (board-raise b holes)
+      (let ((n (length holes))
+            (fresh (make-board)))
+        (let loop ((y 0))
+          (if (< y matrix-height)
+              (begin
+                (if (< y n)
+                    (vector-set! fresh (- matrix-height 1 y)
+                                 (garbage-row (list-ref holes y)))
+                    (vector-set! fresh (- y n)
+                                 (vector-ref b y)))
+                (loop (+ y 1)))))
+        fresh))
 
     ;; The settled height of each column — the shape a score sees.
     (define (column-heights b)

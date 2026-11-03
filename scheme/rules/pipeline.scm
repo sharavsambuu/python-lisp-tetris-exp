@@ -33,6 +33,7 @@
           lock-and-spawn
           lock-active
           spawn-piece
+          receive-garbage
           restart-match
           check-victory
           soft-fall
@@ -335,6 +336,50 @@
                                   bag: bag)
                        (hold-swapped))))))))
 
+
+    ;; ------------------------------------------------------------------ ;;
+    ;;  Garbage — the opponent's arrow                                     ;;
+    ;; ------------------------------------------------------------------ ;;
+
+    ;; `n` rows of garbage enter from the bottom, each with one hole column
+    ;; drawn off the match's own bag stream — one Lehmer step per row, the
+    ;; same generator the pieces shuffle from, so a seeded match replays
+    ;; through garbage too: the holes and every shuffle after them are one
+    ;; deterministic future. The bag's deal is untouched; only its stream
+    ;; position advances.
+    ;;
+    ;; On a cheese board the ordering is: new garbage always sits *below*
+    ;; the old — it enters from the bottom and lifts the cheese up, holes
+    ;; and all.
+    ;;
+    ;; It refuses nothing and flips no phase: garbage is weather, not a
+    ;; command. The falling piece rides the shift — the whole world moves
+    ;; up together, so nothing new collides, and a piece pushed past the
+    ;; ceiling is simply above the matrix, which the board's own law calls
+    ;; free. The only consequence garbage can ever trigger is the ordinary
+    ;; one: the next spawn that does not fit is the over phase — one
+    ;; game-over path for every death.
+    (define (receive-garbage state n)
+      (if (= n 0)
+          (ok state)
+          (let* ((holes
+                  (let loop ((seed (bag-seed (game-bag state))) (i 0) (acc '()))
+                    (if (>= i n)
+                        (reverse acc)
+                        (let ((seed* (next-seed seed)))
+                          (loop seed* (+ i 1)
+                                (cons (modulo seed* matrix-width) acc))))))
+                 (board (board-raise (game-board state) holes))
+                 (p (game-active state))
+                 (active
+                  (if p
+                      (make-falling (falling-name p) (falling-x p)
+                                    (- (falling-y p) n) (falling-rot p))
+                      #f))
+                 (bag (bag-advance (game-bag state) n)))
+            (ok (with-event
+                 (game-with state board: board active: active bag: bag)
+                 (garbage n))))))
 
     ;; ------------------------------------------------------------------ ;;
     ;;  Gravity — the clock's arrow                                        ;;

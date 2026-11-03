@@ -74,6 +74,7 @@
           victory
           restarted
           paced
+          garbage
           game-over
           with-event
           with-events
@@ -150,6 +151,7 @@
                           (victory)
                           (restarted)
                           (paced n)
+                          (garbage n)
                           (game-over))
 
     ;; The aggregate, as one flat record. `config` is the match recipe the

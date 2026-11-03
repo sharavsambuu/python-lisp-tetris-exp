@@ -17,7 +17,9 @@
           bag-seed
           bag-next
           bag-peek
-          bag-refill-from)
+          bag-refill-from
+          bag-advance
+          next-seed)
 
   (begin
     (define modulus 2147483647)          ; 2^31 - 1, a Lehmer-friendly prime
@@ -75,5 +77,15 @@
     ;; reads it instead of reaching into the pair: the representation is
     ;; this library's business alone.
     (define (bag-seed st) (cdr st))
+
+    ;; Step the generator `n` times without touching the deal. Garbage's
+    ;; hole columns spend the same stream the pieces shuffle from — that is
+    ;; what keeps a seeded duel replayable: the holes and every shuffle
+    ;; after them read one deterministic future.
+    (define (bag-advance st n)
+      (let loop ((seed (cdr st)) (i 0))
+        (if (>= i n)
+            (cons (car st) seed)
+            (loop (next-seed seed) (+ i 1)))))
 
     (define (bag-queue st) (car st))))

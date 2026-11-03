@@ -500,6 +500,118 @@
 
 
 ;; --------------------------------------------------------------------- ;;
+;;  rules — receive-garbage: the opponent's arrow                           ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The hole columns come from the match's own bag stream: one Lehmer step
+;; per row, seeded by the bag's position — so a seeded test predicts every
+;; hole before it lands, and a seeded match replays through garbage.
+(let* ((g (fresh-game seed: 20261103))
+       (seed (bag-seed (game-bag g)))
+       (s1 (next-seed seed))
+       (s2 (next-seed s1))
+       (s3 (next-seed s2))
+       (predicted (list (modulo s1 matrix-width)
+                        (modulo s2 matrix-width)
+                        (modulo s3 matrix-width)))
+       (r (result-unwrap-or (receive-garbage g 3) #f)))
+  ;; Each bottom row is garbage full but for its predicted hole.
+  (let loop ((i 0) (hs predicted))
+    (if (not (null? hs))
+        (let ((row (vector->list
+                    (vector-ref (game-board r) (- matrix-height 1 i)))))
+          (assert "the garbage row is full but for its hole"
+                  (every (lambda (x)
+                           (if (= x (car hs))
+                               (eq? (list-ref row x) #f)
+                               (eq? (list-ref row x) 'g)))
+                         (iota matrix-width)))
+          (loop (+ i 1) (cdr hs)))))
+  ;; The stream advanced by exactly the holes spent; the deal untouched.
+  (check (bag-seed (game-bag r)) s3)
+  (check (bag-queue (game-bag r)) (bag-queue (game-bag g)))
+  ;; The fact is announced, newest first.
+  (check (tag-of (car (game-journal r))) 'garbage)
+  (assert "the fact carries its count"
+          (variant-match (car (game-journal r)) ((garbage n) (= n 3)) (else #f)))
+  ;; The board it came from is untouched — the raise is pure.
+  (assert "the original board is unchanged" (board-empty? (game-board g))))
+
+;; The falling piece rides the shift: same column, same rotation, n rows
+;; higher — and it still fits where it did, because the world moved under
+;; it as one.
+(let* ((g (fresh-game seed: 7))
+       (p (game-active g))
+       (r (result-unwrap-or (receive-garbage g 2) #f))
+       (p* (game-active r)))
+  (check (falling-x p*) (falling-x p))
+  (check (falling-rot p*) (falling-rot p))
+  (check (falling-y p*) (- (falling-y p) 2))
+  (assert "the piece keeps its footing"
+          (cells-fit? (game-board r)
+                      (cells-at (falling-name p*) (falling-rot p*)
+                                (falling-x p*) (falling-y p*)))))
+
+;; Top-out by garbage: the raise itself refuses nothing and flips no
+;; phase — the over phase waits for the next spawn that does not fit.
+;; One game-over path for every death.
+(let* ((g (fresh-game seed: 11))
+       (cells (let loop ((y 0) (acc '()))
+                (if (>= y matrix-height)
+                    acc
+                    (loop (+ y 1)
+                          (append acc
+                                  (map (lambda (x) (cons x y))
+                                       (iota matrix-width)))))))
+       (g1 (game-with g board: (board-place (game-board g) 'i cells)))
+       (g2 (result-unwrap-or (receive-garbage g1 1) #f))
+       (g3 (result-unwrap-or (spawn-piece g2) #f)))
+  (assert "garbage itself never ends the match" (phase-playing? g2))
+  (assert "the spawn after garbage tops out" (phase-over? g3))
+  (assert "the death is announced like any other"
+          (memq 'game-over (map tag-of (game-journal g3)))))
+
+;; Nothing delivered, nothing announced: no fact, no stream spent.
+(let* ((g (fresh-game seed: 5))
+       (r (result-unwrap-or (receive-garbage g 0) #f)))
+  (check (game-journal r) (game-journal g))
+  (check (bag-seed (game-bag r)) (bag-seed (game-bag g))))
+
+;; A garbage row pressures the stack exactly like the same row hand-built:
+;; the probes do not know where the ink came from.
+(let* ((g (fresh-game seed: 23))
+       (r (result-unwrap-or (receive-garbage g 1) #f))
+       (hole (let scan ((x 0))
+               (if (eq? (board-ref (game-board r) x (- matrix-height 1)) #f)
+                   x
+                   (scan (+ x 1)))))
+       (hand (let ((b (make-board)))
+               (vector-set! b (- matrix-height 1)
+                            (let ((row (make-vector matrix-width 'g)))
+                              (vector-set! row hole #f)
+                              row))
+               (game-with g board: b))))
+  (check (pressure r) (pressure hand))
+  (assert "a garbage row has weight" (> (pressure r) 0)))
+
+;; Garbage composes UNDER the cheese: new rows enter from the bottom and
+;; lift the old garbage up, holes and all — the dig's count only grows by
+;; what arrived.
+(let* ((g (fresh-game seed: 29 mode: 'cheese options: '((cheese-rows 5))))
+       (before (garbage-count (game-board g)))
+       (r (result-unwrap-or (receive-garbage g 2) #f)))
+  ;; The count is in cells: each newcomer carries nine inked cells —
+  ;; a full row but for its hole.
+  (check (garbage-count (game-board r))
+         (+ before (* 2 (- matrix-width 1))))
+  (assert "the cheese lifted intact, two rows up"
+          (let loop ((y 15))
+            (or (>= y matrix-height)
+                (and (equal? (vector->list (vector-ref (game-board r) (- y 2)))
+                             (vector->list (vector-ref (game-board g) y)))
+                     (loop (+ y 1)))))))
+
+;; --------------------------------------------------------------------- ;;
 ;;  telemetry — the match's vital signs                                    ;;
 ;; --------------------------------------------------------------------- ;;
 

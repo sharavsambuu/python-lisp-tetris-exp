@@ -282,6 +282,65 @@
 (boot-fresh!)
 
 ;; --------------------------------------------------------------------- ;;
+;;  the b2b pop and the new-best badge                                      ;;
+;; --------------------------------------------------------------------- ;;
+
+(tk-section "b2b pop and new best")
+
+;; Craft `ys` rows, each holed in column two, and drop a vertical I into
+;; the hole — the deterministic way to clear exactly those rows.
+(define (craft-rows! ys)
+  (let* ((b (let loop ((bd (make-board)) (cur ys))
+              (if (null? cur)
+                  bd
+                  (loop (board-place bd 'i
+                                     (map (lambda (x) (cons x (car cur)))
+                                          (filter (lambda (x) (not (= x 2)))
+                                                  (iota matrix-width))))
+                        (cdr cur))))))
+    (set! *st* (game-with *st* board: b active: (make-falling 'i 3 0 1))))
+  (let drive ((j 0))
+    (let* ((p (game-active *st*))
+           (done (and (= (falling-x p) 0) (= (falling-rot p) 1))))
+      (cond (done
+             (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+            ((> j 8) (error "could not steer the crafted piece"))
+            (else
+             (if (not (= (falling-rot p) 1))
+                 (set! *st* (result-unwrap-or (apply-command *st* (rotate-cw)) *st*))
+                 (set! *st* (result-unwrap-or (apply-command *st* (left)) *st*)))
+             (drive (+ j 1)))))))
+
+;; A tetris opens the b2b chain: the popup pops in the chain's own color
+;; and the speaker answers in kind.
+(boot-fresh!)
+(start-match! 'marathon '() 'free #f #f #f)
+(set! *ai* #f)
+(craft-rows! '(16 17 18 19))
+(host-clock! 16 2)
+(host-run-frames! 2)
+(tk-assert "the chain's opening popped"
+           (any (lambda (s) (string-contains? s "BACK-TO-BACK"))
+                (host-text-strings)))
+(tk-assert "the chain's opening beeped"
+           (member "b2b" (host-sfx-names)))
+
+;; A free-play match that beats the session's best wears the badge on its
+;; result screen and plays the little fanfare.
+(boot-fresh!)
+(start-match! 'sprint '((target-lines 1)) 'free #f #f #f)
+(set! *ai* #f)
+(craft-rows! '(19))
+(host-clock! 16 2)
+(host-run-frames! 2)
+(tk-assert "the new best wears its badge"
+           (any (lambda (s) (string-contains? s "NEW BEST"))
+                (host-text-strings)))
+(tk-assert "the new best played its fanfare"
+           (member "record" (host-sfx-names)))
+(boot-fresh!)
+
+;; --------------------------------------------------------------------- ;;
 ;;  pausing paints the veil — the bug this suite exists to keep dead         ;;
 ;; --------------------------------------------------------------------- ;;
 

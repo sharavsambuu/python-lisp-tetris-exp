@@ -122,10 +122,14 @@
     (define *hold-pulse-ms* 0)
     (define *fx-t* 0.0)
     (define *danger-paint-ms* 0)
-    ;; The combo popup: the run announcing itself over the well — which
-    ;; run (a fact's payload) and how long the pop still owes.
-    (define *combo-ms* 0)
+    ;; The popup rail: a run or a chain announcing itself over the well —
+    ;; which kind ('combo, with the run's depth in *combo-n*, or 'b2b) and
+    ;; how long the pop still owes.
+    (define *pop-ms* 0)
+    (define *pop-kind* #f)
     (define *combo-n* 0)
+    ;; The result screen's badge: this match beat the session's best.
+    (define *new-best* #f)
 
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
@@ -136,11 +140,18 @@
 
     ;; The conductor awards a combo run: the popup pops in big, escalates
     ;; with the run's length, and fades — a five-link run shouts louder
-    ;; and longer than a two.
+    ;; and longer than a two. The b2b chain's opening gets the same stage,
+    ;; in its own color; a rarer moment overwrites a commoner one.
     (define *combo-pop-ms* 900)
     (define (view-combo-pop! n)
+      (set! *pop-kind* 'combo)
       (set! *combo-n* n)
-      (set! *combo-ms* (+ *combo-pop-ms* (* 100 (min 4 (- n 1))))))
+      (set! *pop-ms* (+ *combo-pop-ms* (* 100 (min 4 (- n 1))))))
+    (define (view-b2b-pop!)
+      (set! *pop-kind* 'b2b)
+      (set! *pop-ms* 1100))
+    (define (view-new-best!)
+      (set! *new-best* #t))
 
     ;; The conductor awards a clear: the beam paints the cleared rows for as
     ;; long as the flash burns — one flash length per line, so a tetris's
@@ -165,8 +176,9 @@
       (set! *beam-rows* '())
       (set! *beam-ms* 0)
       (set! *hold-pulse-ms* 0)
-      (set! *combo-ms* 0)
-      (set! *combo-n* 0)
+      (set! *pop-ms* 0)
+      (set! *pop-kind* #f)
+      (set! *new-best* #f)
       (set! *danger-paint-ms* 0))
 
     ;; Mix two rgb lists: t=0 answers a, t=1 answers b, between — a blend.
@@ -206,7 +218,7 @@
       (or (> *flash-ms* 0)
           (> *beam-ms* 0)
           (> *hold-pulse-ms* 0)
-          (> *combo-ms* 0)
+          (> *pop-ms* 0)
           (not (= *score-shown* (game-score st)))
           (and (danger-tint? st) (<= *danger-paint-ms* 0))))
 
@@ -223,7 +235,7 @@
       (if (> *hold-pulse-ms* 0)
           (set! *hold-pulse-ms* (max 0 (- *hold-pulse-ms* dt)))
           #f)
-      (set! *combo-ms* (max 0 (- *combo-ms* dt)))
+      (set! *pop-ms* (max 0 (- *pop-ms* dt)))
       ;; The ticker chases the real score: an eighth of the gap per frame,
       ;; at least one, so a small gain still visibly rolls.
       (let ((target (game-score st)))
@@ -530,18 +542,26 @@
             (draw-cells! (active-cells st)
                          (piece-color (falling-name (game-active st)))))
           #f)
-      ;; The combo popup, over everything: pops in big during the first
-      ;; fifth of its life, then fades toward the veil's dark. The type
+      ;; The popup, over everything: pops in big during the first fifth of
+      ;; its life, then fades toward the veil's dark. The combo's type
       ;; escalates with the run — a five-link combo shouts larger than a
-      ;; two — so the size itself reads how deep the run is.
-      (if (> *combo-ms* 0)
-          (let* ((total (+ *combo-pop-ms* (* 100 (min 4 (- *combo-n* 1)))))
-                 (t (- 1.0 (/ *combo-ms* total)))
+      ;; two — so the size itself reads how deep the run is; the b2b chain
+      ;; wears its own color at its own size.
+      (if (> *pop-ms* 0)
+          (let* ((total (if (eq? *pop-kind* 'b2b)
+                            1100
+                            (+ *combo-pop-ms* (* 100 (min 4 (- *combo-n* 1))))))
+                 (t (- 1.0 (/ *pop-ms* total)))
                  (pop (max 0.0 (- 1.0 (* t 5.0))))
-                 (base (+ 20 (* 6 (min 4 (- *combo-n* 1)))))
+                 (base (if (eq? *pop-kind* 'b2b)
+                           24
+                           (+ 20 (* 6 (min 4 (- *combo-n* 1))))))
                  (size (min 44 (exact (round (* base (+ 1.0 (* 0.6 pop)))))))
-                 (s (tr-fmt 'popup-combo *combo-n*))
-                 (rgb (mix-rgb '(16 16 24) (color accent:) (max 0.0 (- 1.0 (* t t)))))
+                 (s (if (eq? *pop-kind* 'b2b)
+                        (tr 'popup-b2b)
+                        (tr-fmt 'popup-combo *combo-n*)))
+                 (hot (if (eq? *pop-kind* 'b2b) (color warn:) (color accent:)))
+                 (rgb (mix-rgb '(16 16 24) hot (max 0.0 (- 1.0 (* t t)))))
                  (x (centered-x (lay board-x:)
                                 (* matrix-width (lay cell:))
                                 s size)))
@@ -573,19 +593,25 @@
         ((won)
          (draw-playing-field! st)
          (draw-overlay!
-          (list (list (tr 'overlay-level-clear) 34)
-                (list (tr-fmt 'overlay-score (game-score st)) 22)
-                (list (tr 'overlay-return-onward) 20)
-                (list (tr 'overlay-r-replay) 20)
-                (list (tr 'overlay-esc-menu) 20))))
+          (append (list (list (tr 'overlay-level-clear) 34)
+                        (list (tr-fmt 'overlay-score (game-score st)) 22))
+                  (if *new-best*
+                      (list (list (tr 'overlay-new-best) 20))
+                      '())
+                  (list (list (tr 'overlay-return-onward) 20)
+                        (list (tr 'overlay-r-replay) 20)
+                        (list (tr 'overlay-esc-menu) 20)))))
         ((over)
          (draw-playing-field! st)
          (draw-overlay!
-          (list (list (tr 'overlay-game-over) 34)
-                (list (tr-fmt 'overlay-score (game-score st)) 22)
-                (list (tr-fmt 'overlay-lines (game-lines st)) 22)
-                (list (tr 'overlay-r-again) 20)
-                (list (tr 'overlay-esc-menu) 20))))
+          (append (list (list (tr 'overlay-game-over) 34)
+                        (list (tr-fmt 'overlay-score (game-score st)) 22)
+                        (list (tr-fmt 'overlay-lines (game-lines st)) 22))
+                  (if *new-best*
+                      (list (list (tr 'overlay-new-best) 20))
+                      '())
+                  (list (list (tr 'overlay-r-again) 20)
+                        (list (tr 'overlay-esc-menu) 20)))))
         ((playing)
          (draw-playing-field! st)))
       (apply-fx!)

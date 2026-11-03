@@ -374,6 +374,55 @@
           2)
 
 ;; --------------------------------------------------------------------- ;;
+;;  the b2b chain — opened with a flourish, continued in silence            ;;
+;; --------------------------------------------------------------------- ;;
+
+;; A back-to-back Tetris pays half again, but only the chain's OPENING is
+;; a moment: the fact fires once, the linked Tetrises pay in silence.
+(tk-section "b2b chain")
+
+(boot-into! 'marathon '())
+(set! *ai* #f)
+
+(define (craft-tetris!)
+  (let* ((hole 2)
+         (b (let loop ((bd (make-board)) (ys '(16 17 18 19)))
+              (if (null? ys)
+                  bd
+                  (loop (board-place bd 'i
+                                     (map (lambda (x) (cons x (car ys)))
+                                          (filter (lambda (x) (not (= x hole)))
+                                                  (iota matrix-width))))
+                        (cdr ys))))))
+    (set! *st* (game-with *st* board: b active: (make-falling 'i 3 0 1))))
+  (let drive ((i 0))
+    (let* ((p (game-active *st*))
+           (done (and (= (falling-x p) 0) (= (falling-rot p) 1))))
+      (cond (done
+             (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+            ((> i 8) (error "could not steer the crafted piece"))
+            (else
+             (if (not (= (falling-rot p) 1))
+                 (set! *st* (result-unwrap-or (apply-command *st* (rotate-cw)) *st*))
+                 (set! *st* (result-unwrap-or (apply-command *st* (left)) *st*)))
+             (drive (+ i 1)))))))
+
+(craft-tetris!)
+(tk-assert "the chain's opening is announced"
+           (memq 'b2b (map tag-of (game-journal *st*))))
+(let ((s-after-first (game-score *st*)))
+  (craft-tetris!)
+  ;; The linked Tetris's frame: 32 for its hard drop, 1200 at three
+  ;; halves for the b2b clear, and 50 — the run's second link now pays
+  ;; its combo.
+  (tk-check "the linked tetris paid three halves"
+            (game-score *st*) (+ s-after-first 1282))
+  (tk-assert "a continued chain says nothing new"
+             (= (length (filter (lambda (e) (eq? (tag-of e) 'b2b))
+                                (game-journal *st*)))
+                1)))
+
+;; --------------------------------------------------------------------- ;;
 ;;  a sprint win, steered by the built-in AI, through the real loop          ;;
 ;; --------------------------------------------------------------------- ;;
 

@@ -123,6 +123,8 @@
         (hud-garbage           "GARBAGE ~a"                      "ХОГ ~a")
         (hud-combo             "COMBO x~a"                       "КОМБО x~a")
         (popup-combo           "x~a COMBO"                       "x~a КОМБО")
+        (popup-b2b             "BACK-TO-BACK"                    "ДАРААЛАЛ!")
+        (overlay-new-best      "NEW BEST!"                       "ШИНЭ ДЭЭД АМЖИЛТ!")
         (hud-b2b               "BACK-TO-BACK"                    "ТАСРАЛТГҮЙ")
         (hud-keys              "KEYS"                            "ТОВЧУУД")
 

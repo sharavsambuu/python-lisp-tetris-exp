@@ -68,6 +68,7 @@
           cleared
           scored
           combo
+          b2b
           level-up
           victory
           restarted
@@ -142,6 +143,7 @@
                           (cleared rows)
                           (scored points)
                           (combo n)
+                          (b2b)
                           (level-up n)
                           (victory)
                           (restarted)

@@ -262,6 +262,13 @@
                        (append (list (cleared rows) (scored points))
                                (if (>= (game-combo s3) 2)
                                    (list (combo (game-combo s3)))
+                                   '())
+                               ;; The chain's START is the moment — a
+                               ;; linked Tetris pays its half again
+                               ;; silently, but opening the chain is a
+                               ;; fact worth announcing.
+                               (if (and (is-b2b? n) (not (game-b2b s1)))
+                                   (list (b2b))
                                    '())))))))))))
 
     ;; Draw the next piece. The one way a game ends: a spawn that does not

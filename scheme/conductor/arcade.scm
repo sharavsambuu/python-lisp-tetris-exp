@@ -124,10 +124,11 @@
                                          (cadr (car order))))
                     ;; The combo announcer is the one overlay: a clear
                     ;; frame headlines with the clear, and the run's tier
-                    ;; beep rides on top of it.
+                    ;; beep or the chain's opening rides on top of it.
                     (for-each (lambda (ev)
                                 (variant-match ev
                                   ((combo n) (sfx! (combo-sfx n)))
+                                  ((b2b) (sfx! "b2b"))
                                   (else #f)))
                               events))
                   (loop (cdr order)))))))
@@ -145,6 +146,7 @@
         ;; The combo runs on top of the clear blip, like an announcer over
         ;; the SFX — this arm answers the frames with no ranked fact.
         ((combo n) (sfx! (combo-sfx n)))
+        ((b2b) (sfx! "b2b"))
         (else #f)))
 
     ;; Play the journal, then hand back the state with the paper trail
@@ -201,6 +203,7 @@
            ((hold-swapped) (view-hold-pulse!))
            ((hold-refused) (fx-thud! 1.0))
            ((combo n) (view-combo-pop! n))
+           ((b2b) (view-b2b-pop!))
            ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
            ((victory) (view-flash! '(230 230 240) 220))
            ((game-over) (view-flash! '(160 40 40) 260))
@@ -266,7 +269,13 @@
         ;; rung's, and recording it here leaked ladder wins (and ladder
         ;; losses) into the mode list the title decorates.
         (if (eq? *origin* 'free)
-            (set! *bests* (record-best *bests* label (game-score st)))
+            (let ((prev (best-for *bests* label)))
+              (set! *bests* (record-best *bests* label (game-score st)))
+              ;; A beaten best is worth a moment: the result overlay wears
+              ;; its badge, and the speaker has its own little fanfare.
+              (if (and (> (game-score st) 0) (> (game-score st) prev))
+                  (begin (view-new-best!) (sfx! "record"))
+                  #f))
             #f)
         (if (and (eq? *origin* 'campaign)
                  *playing-key*
@@ -718,9 +727,13 @@
                ((string=? key "a")
                 (set! *ai* (not *ai*))
                 (reset-ai!)
+                (sfx! "menu-move")
+                (set! *dirty* #t)   ; the toggle must show at once
                 st)
                ((string=? key "g")
                 (show-ghost! (not (show-ghost?)))
+                (sfx! "menu-move")
+                (set! *dirty* #t)   ; the ghost must show at once
                 st)
                ;; Escape from a live match pauses rather than leaves — a
                ;; stray keypress should cost a keypress, not a game.

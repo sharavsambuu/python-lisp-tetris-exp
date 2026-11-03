@@ -253,28 +253,90 @@
       (draw-rect! left 40 (lay panel-w:) 200 (color panel:))
       (draw-text! (+ left 8) 48 label 20 (color dim:)))
 
+    ;; ---------------------------------------------------------------- ;;
+    ;;  Panel previews — real pieces, not spellings                      ;;
+    ;; ---------------------------------------------------------------- ;;
+    ;;
+    ;; The HOLD and NEXT panels draw the piece itself: the same spawn cells
+    ;; the board paints, at a smaller scale. The per-piece data is derived
+    ;; once at load — the same discipline as geometry's `rotation-table`:
+    ;; each piece's spawn cells normalized to a 0-anchored bounding box,
+    ;; paired with the box width so centering is one quotient per repaint,
+    ;; never a min/max scan per cell (§13.3: pay per epoch, not per frame).
+    ;; A preview is at most 4 cells and there are four of them, so a
+    ;; repaint pays ≤16 seam crossings here — a rounding error beside
+    ;; `draw-board!`'s two hundred.
+    (define preview-mini-hold 16)        ; the hold slot's cell size
+    (define preview-mini-next 14)        ; the queue slots' cell size
+
+    (define preview-shapes
+      (map
+       (lambda (name)
+         (let* ((cells (piece-cells name 0))
+                (min-x (let scan ((ls cells) (m 10))
+                         (if (null? ls) m (scan (cdr ls) (min m (car (car ls)))))))
+                (min-y (let scan ((ls cells) (m 10))
+                         (if (null? ls) m (scan (cdr ls) (min m (cdr (car ls)))))))
+                (max-x (let scan ((ls cells) (m 0))
+                         (if (null? ls) m (scan (cdr ls) (max m (car (car ls)))))))
+                (norm (map (lambda (c)
+                             (cons (- (car c) min-x) (- (cdr c) min-y)))
+                           cells)))
+           (cons name (cons (+ (- max-x min-x) 1) norm))))
+       piece-names))
+
+    ;; One mini piece: its normalized spawn cells at `mini` px, centered on
+    ;; the panel midline `cx`, top edge at `y`, in `rgb`. Plain arithmetic
+    ;; and hoisted reads — the panels repaint on every repaint, and a
+    ;; `chain` or a per-cell `lay` in this loop would be §13.2 all over
+    ;; again (the board paid 289ms for exactly that once).
+    (define (draw-preview! name cx y mini rgb)
+      (let* ((entry (cdr (assq name preview-shapes)))
+             (w (car entry))
+             (cells (cdr entry))
+             (s (- mini 1))
+             (x (- cx (quotient (* w mini) 2))))
+        (for-each (lambda (c)
+                    (draw-rect! (+ x (* (car c) mini))
+                                (+ y (* (cdr c) mini))
+                                s s rgb))
+                  cells)))
+
     (define (draw-hold! st)
       (draw-panel! (lay left-x:) "HOLD")
-      ;; A swap lights the panel's label up, then the pulse decays — the
+      ;; The held piece itself, in its own color, centered in the slot —
+      ;; and a swap lights the *shape* up, then the pulse decays, so the
       ;; player's eye lands where the state changed.
-      (let ((t (min 1.0 (/ *hold-pulse-ms* 150))))
-        (if (game-hold st)
-            (draw-text! (+ (lay left-x:) 8) 76
-                        (symbol->string (game-hold st)) 26
-                        (mix-rgb (piece-color (game-hold st))
-                                 (color accent:) t))
-            (draw-text! (+ (lay left-x:) 8) 76 "-" 26 (color dim:)))))
+      (let ((name (game-hold st)))
+        (if name
+            (draw-preview! name
+                           (+ (lay left-x:) (quotient (lay panel-w:) 2))
+                           96
+                           preview-mini-hold
+                           (if (> *hold-pulse-ms* 0)
+                               (mix-rgb (piece-color name)
+                                        (color accent:)
+                                        (min 1.0 (/ *hold-pulse-ms* 150)))
+                               (piece-color name)))
+            #f)))
 
     (define (draw-next! st)
       (draw-panel! (lay right-x:) "NEXT")
-      (let loop ((names (bag-peek (game-bag st) 3)) (i 0))
-        (if (null? names)
-            #f
-            (begin
-              (draw-text! (+ (lay right-x:) 8) (+ 76 (* i 34))
-                          (symbol->string (car names)) 26
-                          (piece-color (car names)))
-              (loop (cdr names) (+ i 1))))))
+      ;; The queue as three real pieces, each centered on the panel's
+      ;; midline — the same cells the board will spawn, in the colors it
+      ;; will spawn them in. The midline read is hoisted; the loop body is
+      ;; one table lookup, one quotient and four seam crossings.
+      (let ((cx (+ (lay right-x:) (quotient (lay panel-w:) 2))))
+        (let loop ((names (bag-peek (game-bag st) 3)) (i 0))
+          (if (null? names)
+              #f
+              (begin
+                (draw-preview! (car names)
+                               cx
+                               (+ 80 (* i 52))
+                               preview-mini-next
+                               (piece-color (car names)))
+                (loop (cdr names) (+ i 1)))))))
 
     (define (draw-stats! st)
       (let ((x (lay left-x:))

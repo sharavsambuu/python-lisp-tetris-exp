@@ -154,6 +154,23 @@
            (any (lambda (s) (string-contains? s "HOLD")) (host-text-strings)))
 (tk-assert "the HUD's every painter call fits"
            (every host-fits-window? *host-log*))
+;; The panels draw the pieces themselves: mini shape cells (13-15px squares,
+;; the board's are 25px) on the panels' side of the well — the queue as real
+;; pieces, not spellings of them.
+(tk-assert "the next queue paints real shape cells"
+           (any (lambda (e)
+                  (and (eq? (car e) 'rect)
+                       (< (list-ref e 3) 20)
+                       (>= (list-ref e 1) 400)))
+                *host-log*))
+(host-tap! "c")
+(draw-game! *st*)
+(tk-assert "a swap paints the held piece's shape"
+           (any (lambda (e)
+                  (and (eq? (car e) 'rect)
+                       (< (list-ref e 3) 20)
+                       (< (list-ref e 1) 190)))
+                *host-log*))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  pausing paints the veil — the bug this suite exists to keep dead         ;;

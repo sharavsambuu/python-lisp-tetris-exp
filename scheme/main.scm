@@ -22,6 +22,7 @@
 (load "rules/scoring")
 (load "policies/gravity")
 (load "rules/pipeline")
+(load "domain/duel")
 
 (load "content/campaign")
 (load "content/locale")

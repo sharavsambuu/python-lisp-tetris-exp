@@ -25,6 +25,7 @@
 (load "rules/scoring")
 (load "policies/gravity")
 (load "rules/pipeline")
+(load "domain/duel")
 
 (load "content/campaign")
 
@@ -38,6 +39,7 @@
         (tetris game)
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
+        (tetris duel)
         (tetris campaign))
 
 (define-syntax check
@@ -610,6 +612,147 @@
                 (and (equal? (vector->list (vector-ref (game-board r) (- y 2)))
                              (vector->list (vector-ref (game-board g) y)))
                      (loop (+ y 1)))))))
+
+;; --------------------------------------------------------------------- ;;
+;;  duel — two matches, one fight                                           ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The attack table is the design doc: a single sends nothing, a double
+;; one, a triple two, a Tetris four. The sprint's whole diff is one row —
+;; nothing sends at all, the race is the target. The combo escalates and
+;; caps; the b2b bonus is a named one.
+(check (attack-rows-for-clear (attack-table-for 'marathon) 1) 0)
+(check (attack-rows-for-clear (attack-table-for 'marathon) 2) 1)
+(check (attack-rows-for-clear (attack-table-for 'marathon) 3) 2)
+(check (attack-rows-for-clear (attack-table-for 'marathon) 4) 4)
+(check (attack-rows-for-clear (attack-table-for 'sprint) 2) 0)
+(check (attack-rows-for-clear (attack-table-for 'sprint) 4) 0)
+(check (combo-attack-rows 1) 0)
+(check (combo-attack-rows 3) 1)
+(check (combo-attack-rows 8) 4)
+(check (combo-attack-rows 20) 4)
+(check b2b-attack-bonus 1)
+
+;; The ledger reads like the journal: a double, the chain's second link,
+;; and a back-to-back are one attack of three rows.
+(let ((g (game-with (fresh-game seed: 1)
+                    journal: (list (b2b) (combo 2) (cleared '(0 1))))))
+  (check (journal-attack (attack-table-for 'marathon) g) 3))
+
+;; The offset rule: a simultaneous exchange cancels — equal attacks land
+;; nowhere, and both journals drain exactly once.
+(let* ((l (game-with (fresh-game seed: 31) journal: (list (cleared '(0 1 2)))))
+       (r (game-with (fresh-game seed: 32) journal: (list (cleared '(0 1 2)))))
+       (d (duel-exchange (make-duel l r))))
+  (assert "equal simultaneous clears cancel"
+          (and (board-empty? (game-board (duel-left d)))
+               (board-empty? (game-board (duel-right d)))))
+  (check (game-journal (duel-left d)) '())
+  (check (game-journal (duel-right d)) '()))
+
+;; Garbage lands only on the loser of the exchange: a triple over a
+;; single sends the net two rows, rightward.
+(let* ((l (game-with (fresh-game seed: 31) journal: (list (cleared '(0 1 2)))))
+       (r (game-with (fresh-game seed: 32) journal: (list (cleared '(0)))))
+       (d (duel-exchange (make-duel l r))))
+  (assert "the loser's side takes the garbage"
+          (and (board-empty? (game-board (duel-left d)))
+               (not (board-empty? (game-board (duel-right d))))))
+  (assert "the delivery is announced on the receiver"
+          (memq 'garbage (map tag-of (game-journal (duel-right d))))))
+
+;; The defender's own pending clear is the cancellation: a triple against
+;; an incoming double not only blocks it — the net row flies back.
+(let* ((l (game-with (fresh-game seed: 31) journal: (list (cleared '(0 1)))))
+       (r (game-with (fresh-game seed: 32) journal: (list (cleared '(0 1 2)))))
+       (d (duel-exchange (make-duel l r))))
+  (assert "the bigger clear turns the exchange around"
+          (and (board-empty? (game-board (duel-right d)))
+               (not (board-empty? (game-board (duel-left d)))))))
+
+;; One planner-driven lock: score all forty placements, march, slam —
+;; the miniature AI the sprint test uses, lifted to a helper so the
+;; self-play duel can drive two sides with it. A match that is over is
+;; not driven.
+(define (drive-one s)
+  (if (not (phase-playing? s))
+      s
+      (let* ((ws (weights 2.0 2.5 0.5 0.6))
+             (p (game-active s))
+             (name (falling-name p))
+             (hts (column-heights (game-board s)))
+             (best
+              (let scan ((x 0) (rot 0) (bx 3) (brot 0) (bscore -1000000))
+                (cond ((>= rot 4) (list bx brot))
+                      ((>= x 10) (scan 0 (+ rot 1) bx brot bscore))
+                      (else
+                       (let ((ly (landing-y-at s x rot)))
+                         (if (not ly)
+                             (scan (+ x 1) rot bx brot bscore)
+                             (let ((score (placement-score
+                                           ws hts (piece-cells name rot)
+                                           x ly matrix-height)))
+                               (scan (+ x 1) rot
+                                     (if (> score bscore) x bx)
+                                     (if (> score bscore) rot brot)
+                                     (max score bscore)))))))))
+             (bx (car best))
+             (brot (cadr best))
+             ;; March to (bx brot), then slam. The march runs on fuel —
+             ;; after garbage raises a stack, a rotation or a shift can
+             ;; be refused, and an unfueled march would spin on a wall
+             ;; forever. Out of fuel, slam from wherever the piece got.
+             (steered
+              (let drive ((st s) (fuel 40))
+                (let ((pp (game-active st)))
+                  (cond ((= fuel 0) st)
+                        ((not (= (falling-rot pp) brot))
+                         (drive (result-unwrap-or (apply-command st (rotate-cw)) st)
+                                (- fuel 1)))
+                        ((< (falling-x pp) bx)
+                         (drive (result-unwrap-or (apply-command st (right)) st)
+                                (- fuel 1)))
+                        ((> (falling-x pp) bx)
+                         (drive (result-unwrap-or (apply-command st (left)) st)
+                                (- fuel 1)))
+                        (else st))))))
+        (result-unwrap-or (apply-command steered (hard-drop)) steered))))
+
+;; The duel plays itself: two seeded planners, one fight, one exchange
+;; per round — each side places a piece, then the journals meet through
+;; the attack table, attacks cancel, garbage lands, and the first top-out
+;; ends it. Run twice under the same seeds: the same fight, the same
+;; winner. The test needs no mocks, because there is nothing to mock.
+(define (self-play seed-l seed-r)
+  (let loop ((d (make-duel (fresh-game seed: seed-l) (fresh-game seed: seed-r)))
+             (i 0))
+    (cond ((duel-over? d) d)
+          ((> i 400) (error "the duel never ended"))
+          (else
+           (loop (duel-exchange
+                  (duel-with-right
+                   (duel-with-left d (drive-one (duel-left d)))
+                   (drive-one (duel-right d))))
+                 (+ i 1))))))
+
+(let* ((d1 (self-play 51 52))
+       (d2 (self-play 51 52))
+       (loser (if (eq? (duel-winner d1) 'left) duel-right duel-left))
+       (winner (if (eq? (duel-winner d1) 'left) duel-left duel-right)))
+  (check (duel-winner d1) (duel-winner d2))
+  (assert "the winner is a side" (memq (duel-winner d1) '(left right)))
+  (assert "the loser topped out" (phase-over? (loser d1)))
+  (assert "the winner still stands" (phase-playing? (winner d1)))
+  (assert "the fight was a fight"
+          (> (+ (length (board-cells (game-board (duel-left d1))))
+                (length (board-cells (game-board (duel-right d1)))))
+             20)))
+
+;; A duel-step takes dt on both sides whole: two clocks, one tick, and
+;; the exchange runs underneath.
+(let ((d (duel-step (make-duel (fresh-game seed: 61) (fresh-game seed: 62)) 250)))
+  (check (game-clock (duel-left d)) 250)
+  (check (game-clock (duel-right d)) 250))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  telemetry — the match's vital signs                                    ;;

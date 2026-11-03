@@ -47,7 +47,10 @@ def _load(name, extra_paths=(), budget=DEFAULT_BUDGET):
 
 
 def test_pure_domain():
-    _load("domain-tests.scm")
+    # A self-play duel (two planners, one fight, one exchange per round)
+    # costs ~35M steps measured; the determinism check runs two in one
+    # form. 150M gives the suite ~2x headroom over its hungriest form.
+    _load("domain-tests.scm", budget=150_000_000)
 
 
 @pytest.mark.slow

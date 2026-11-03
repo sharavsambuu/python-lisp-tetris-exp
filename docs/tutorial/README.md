@@ -8,7 +8,7 @@ one the game actually relies on.
 
 ## How the series teaches
 
-The sixteen chapters form one arc, in five parts. Each chapter opens with
+The chapters form one arc, in seven parts. Each chapter opens with
 **where you are** and **what you will be able to do**, and closes with a
 **checkpoint** — a one-line self-test. Read them in order the first time;
 after that, each stands alone as a reference.
@@ -68,6 +68,12 @@ smaller game in this style, and every technique will be something you have
 | # | Chapter | You learn |
 |---|---------|-----------|
 | 17 | [The director](17-the-director.md) | Telemetry probes with documented ranges, the pressure band, pacing as a field of the match, A/B runs under a seed |
+
+### Part VII — The opponent (two loops, one fight)
+
+| # | Chapter | You learn |
+|---|---------|-----------|
+| 18 | [The duel](18-the-duel.md) | Garbage as a domain arrow from the match's own random stream, the attack table as data, the offset rule, the duel as a pure value, AI-vs-AI self-play under a seed |
 
 
 ## What the root README flexes → where the series teaches it

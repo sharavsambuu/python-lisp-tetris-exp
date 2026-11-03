@@ -33,12 +33,13 @@
 ;;;    ("ladder"  . 0)                        ; next persona to face (stage 5)
 ;;;    ("records" . (("wall" . (("wins" . 1) ("losses" . 0)
 ;;;                             ("margin" . 42))) ...))
-;;;    ("leashes" . (("wall" . (("pace" . 1.2) ...)) ...)))
+;;;    ("leashes" . (("wall" . 0.07) ...)))    ; the tuned band per persona
 ;;;
-;;; The ladder, the records and the leashes are schema now — the versus
-;;; screens and the tuned leashes populate them at stages 5 and 6. The
-;;; document is versioned from day one, so the guard below has a hook
-;;; the day the format moves.
+;;; The ladder and the records populated at stage 5; the leashes at
+;;; stage 6 — the duel director's retuned bands, one step per settled
+;;; duel, tighter after a win, looser after a loss. The document is
+;;; versioned from day one, so the guard below has a hook the day the
+;;; format moves.
 ;;;
 ;;; Save points: a settled match, a locale change, quitting. Never per
 ;;; frame — the disk is the one actuator this file owns, and it is

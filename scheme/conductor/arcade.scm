@@ -179,6 +179,20 @@
     (define *duel* #f)
     (define *persona* #f)
     (define *duel-paused* #f)
+    ;; The leash — the duel director (stage 6). The probe is the
+    ;; closeness gap between the sides; the actuators touch only the
+    ;; AI's side: its placement budget (*r-throttle*, the persona's
+    ;; speed knob's multiplier) and its gravity (*r-pace*). The band is
+    ;; the persona's own knob unless the profile holds a tuned one —
+    ;; the roster promised the leash, the memory remembers the tuning.
+    (define *leash* #f)
+    (define *r-throttle* 1)
+    (define *r-pace* 1)
+    (define *leash-last* 0)          ;; the duel clock of the last adjustment
+    ;; Slower and quieter than the solo director (1000 ms, 0.05): visible
+    ;; rubber-banding is the fastest way to kill a versus mode.
+    (define *leash-cooldown* 2000)
+    (define *leash-threshold* 0.03)
 
     (define (start-duel! persona)
       (guard (e (#t
@@ -193,6 +207,13 @@
                       (fresh-game seed: (new-seed)
                                   mode: 'marathon options: '())))
         (set! *r-lock-count* 0)
+        (let* ((id (symbol->string (persona-id persona)))
+               (entry (assoc id (profile-ref *profile* "leashes" '())))
+               (band (if entry (cdr entry) (persona-band persona))))
+          (set! *leash* (make-leash band: band))
+          (set! *r-throttle* 1)
+          (set! *r-pace* 1)
+          (set! *leash-last* 0))
         (set! *duel-paused* #f)
         (set! *settled* #f)
         (set! *screen* 'duel)
@@ -205,6 +226,9 @@
     (define (close-duel!)
       (set! *duel* #f)
       (set! *persona* #f)
+      (set! *leash* #f)
+      (set! *r-throttle* 1)
+      (set! *r-pace* 1)
       (open-window! window-width window-height "Scheme Tetris — shs DSL")
       (show-screen! 'title (title-menu)))
 
@@ -294,9 +318,53 @@
               (if (and won (= rank ladder) (< ladder (length (persona-ids))))
                   (set! *profile* (profile-set *profile* "ladder" (+ ladder 1)))
                   #f)
+              ;; The leash retunes itself, one step at a time: a win
+              ;; tightens the band (a harder re-fight), a loss loosens
+              ;; it — the homeostat's slow outer loop, across sessions.
+              ;; The band is the only knob the outcome touches, and it
+              ;; rides the profile's "leashes" shelf, so the tuning
+              ;; survives the restart. Clamped: never zero, never loose
+              ;; enough to stop caring.
+              (let* ((old-band (leash-band *leash*))
+                     (new-band (min 0.25
+                                    (max 0.01
+                                         (+ old-band
+                                            (if won -0.01 0.01))))))
+                (set! *profile*
+                      (profile-set *profile* "leashes"
+                                   (cons (cons id new-band)
+                                         (srfi-1:filter
+                                          (lambda (e)
+                                            (not (equal? (car e) id)))
+                                          (profile-ref *profile*
+                                                       "leashes" '()))))))
               (profile-save!))
             #f)
         (sfx! (if won "victory" "over"))))
+
+    ;; One leash step: read the gap, ask the core for a throttle, and
+    ;; speak only when there is something to say — past the cooldown,
+    ;; past the threshold. The adjustment lands on the AI's side only:
+    ;; the budget this frame's search spends, and the gravity its well
+    ;; falls by. The player's side is never read back into the player.
+    (define (duel-direct!)
+      (if (and *leash*
+               (phase-playing? (duel-left *duel*))
+               (phase-playing? (duel-right *duel*)))
+          (let* ((clock (game-clock (duel-left *duel*)))
+                 (gap (duel-gap (game-lines (duel-left *duel*))
+                                (game-lines (duel-right *duel*))
+                                (pressure (duel-left *duel*))
+                                (pressure (duel-right *duel*))))
+                 (m (leash-throttle *leash* gap)))
+            (if (and (>= (- clock *leash-last*) *leash-cooldown*)
+                     (>= (abs (- m *r-throttle*)) *leash-threshold*))
+                (begin
+                  (set! *leash-last* clock)
+                  (set! *r-throttle* m)
+                  (set! *r-pace* (leash-pace *leash* m)))
+                #f))
+          #f))
 
     (define (duel-frame)
       (let* ((dt (tick!))
@@ -315,8 +383,11 @@
         (if (and (not *duel-paused*) (not (duel-over? *duel*)))
             (begin
               ;; The player's keys land before this frame's gravity; the
-              ;; persona's AI takes its one step; then the world moves —
-              ;; both sides, whole dt, one exchange.
+              ;; leash reads the gap and maybe re-budgets the AI; the
+              ;; persona's AI takes its one step at the throttled budget;
+              ;; then the world moves — both sides, whole dt, one
+              ;; exchange, the AI's gravity carrying its handicap.
+              (duel-direct!)
               (set! *duel*
                     (duel-with-left *duel*
                       (duel-events (duel-left *duel*) evs)))
@@ -325,9 +396,14 @@
                         (duel-with-right *duel*
                           (ai-step-match! (duel-right *duel*)
                                           (persona-weights *persona*)
-                                          (persona-speed *persona*)
+                                          (max 1
+                                               (* (persona-speed *persona*)
+                                                  *r-throttle*))
                                           *r-lock-count*)))
                   #f)
+              (set! *duel*
+                    (duel-with-right *duel*
+                      (game-with (duel-right *duel*) pace: *r-pace*)))
               ;; The edge reads the journals BEFORE the exchange drains
               ;; them: each fact awards once, on the side that earned it.
               (duel-award! 'left (reverse (game-journal (duel-left *duel*))))

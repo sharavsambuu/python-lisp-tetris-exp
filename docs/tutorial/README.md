@@ -77,6 +77,7 @@ smaller game in this style, and every technique will be something you have
 | 19 | [The roster](19-the-roster.md) | Opponents as content, the planner's style term, the speed knob as the honest difficulty lever, personalities pinned by a seeded sweep |
 | 20 | [The profile](20-the-profile.md) | Growing a closed seam, a versioned document at the edge with the meaning on the script side, atomic writes, save points as semantic moments, the failure posture of a save file |
 | 21 | [Versus](21-versus.md) | Measuring the painter before the layout, the batch primitive that earned its place on the seam, two boards from one painter, the persona ladder as a menu, a human in the circuit |
+| 22 | [The closeness band](22-the-closeness-band.md) | The duel director: a probe over a relationship, the ethical wall that touches only the AI, the seeded A/B that proves the claim, the slow outer loop that retunes across sessions |
 
 
 ## What the root README flexes → where the series teaches it

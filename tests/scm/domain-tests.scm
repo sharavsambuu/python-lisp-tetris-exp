@@ -901,6 +901,48 @@
   (check (director-pace d 0.6) 1)
   (assert "a moved target moves the hold" (< (director-pace d 0.4) 1)))
 
+;; --------------------------------------------------------------------- ;;
+;;  the leash — the duel director: a gap in, an AI-only throttle out       ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The probe: lines plus four lines' worth of pressure a side, signed
+;; left-minus-right. Even sides read zero, whatever their pressure.
+(check (duel-gap 3 3 0.2 0.2) 0)
+(check (duel-gap 5 3 0.0 0.0) 2)
+(check (duel-gap 3 5 0.0 0.0) -2)
+(assert "pressure weighs four lines a side"
+        (= (duel-gap 0 4 1.0 0.0) 0))          ; a full board ≈ a 4-line lead
+
+;; The probe, normalized: 0 is a knife's edge, 1 is the blowout scale.
+(let ((l (make-leash)))
+  (check (closeness l 0) 0)
+  (check (closeness l 8) 1)
+  (check (closeness l -8) 1)
+  (assert "past the scale it stays a blowout" (= (closeness l 80) 1)))
+
+;; The throttle: inside the band hold, outside move — toward the AI
+;; only, and clamped.
+(let ((l (make-leash band: 0.1)))
+  (check (leash-throttle l 0) 1)       ; knife's edge: the AI's own knob
+  (check (leash-throttle l 0.5) 1)     ; 0.5/8 = 0.0625, inside the band
+  (assert "the AI behind speeds up" (> (leash-throttle l 4) 1))
+  (assert "the AI ahead slows down" (< (leash-throttle l -4) 1))
+  (check (leash-throttle l 100) (leash-high-throttle l))
+  (check (leash-throttle l -100) (leash-low-throttle l)))
+
+;; The band is the leash's width: a tighter band acts sooner.
+(let ((tight (make-leash band: 0.02)) (loose (make-leash band: 0.2)))
+  (assert "a tight band acts on a small gap" (> (leash-throttle tight 1) 1))
+  (check (leash-throttle loose 1) 1))
+
+;; The pace handicap is the same move, damped — the quiet actuator.
+(let ((l (make-leash pace-gain: 0.5)))
+  (check (leash-pace l 1) 1)
+  (let ((p (leash-pace l 1.5)))
+    (assert "the pace moves less than the budget" (< (abs (- p 1)) 0.5)))
+  (assert "a slowed AI gets a lighter well, not a faster one"
+          (< (leash-pace l 0.8) 1)))
+
 ;; The paced interval bends the level's curve and holds the floor.
 (check (paced-interval 1 1) (drop-interval 1))
 (assert "a hot pace shortens the interval"

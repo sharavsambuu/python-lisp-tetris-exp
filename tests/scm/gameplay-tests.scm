@@ -58,7 +58,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris plan)
-        (tetris game) (tetris duel) (tetris roster)
+        (tetris game) (tetris duel) (tetris roster) (tetris director)
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
         (tetris campaign))
@@ -642,6 +642,67 @@
           (profile-ref (cdr (assoc "wall" (profile-ref *profile* "records" '())))
                        "wins" 0)
           1)
+
+;; --------------------------------------------------------------------- ;;
+;;  the leash — the duel director: the gap in, the AI-only throttle out    ;;
+;; --------------------------------------------------------------------- ;;
+
+;; Every duel boots leashed: the persona's band unless the profile
+;; holds a tuned one, and the AI's side starts at its own knob.
+(start-duel! (persona-by-id 'wall))
+(tk-assert "the duel boots leashed" (not (not *leash*)))
+;; The boot reads the shelf the settles tuned — float arithmetic, so
+;; the comparison carries a tolerance.
+(tk-assert "the band is the persona's own"
+           (< (abs (- (leash-band *leash*)
+                      (persona-band (persona-by-id 'wall))))
+              0.000000001))
+(tk-check "the throttle starts at the AI's own knob" *r-throttle* 1)
+
+;; The retune, written by the settles above: the loss loosened the
+;; band, the win tightened it — one step each, net zero, but the
+;; shelf exists and the next duel reads it.
+(tk-assert "the tuned band rode the profile"
+           (< (abs (- (cdr (assoc "wall" (profile-ref *profile* "leashes" '())))
+                      (persona-band (persona-by-id 'wall))))
+              0.000000001))
+(tk-check "the next duel reads the tuned band"
+          (leash-band *leash*)
+          (cdr (assoc "wall" (profile-ref *profile* "leashes" '()))))
+(close-duel!)
+
+;; A player running away is an AI behind: past the cooldown, the
+;; throttle moves UP — the budget this frame's search spends, never
+;; the player's side. The gap is forced (the player's lines), so the
+;; test buys its determinism the same way the settle tests do.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-left *duel*
+        (game-with (duel-left *duel*) lines: 10)))
+(tk-check "the forced gap reads as a blowout"
+          (closeness *leash*
+                     (duel-gap 10 0 0 0))
+          1)
+(host-run-frames! 130)             ; the 2 s cooldown burns, then it speaks
+(tk-assert "a blowout boosts the AI's budget" (> *r-throttle* 1))
+(tk-assert "the boost bends the AI's gravity too" (> *r-pace* 1))
+(tk-assert "the boost lands on the AI only"
+           (equal? (game-pace (duel-left *duel*)) 1))
+
+;; The mirror image: the AI running away gets reeled in.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-right *duel*
+        (game-with (duel-right *duel*) lines: 10)))
+(host-run-frames! 130)
+(tk-assert "a runaway AI is throttled down" (< *r-throttle* 1))
+(close-duel!)
+
+;; The retune persists: a settled duel writes the band, a reload
+;; reads it back — the stage-4 document carrying stage-6's tuning.
+(profile-load!)
+(tk-assert "the tuned band survives a reload"
+           (assoc "wall" (profile-ref *profile* "leashes" '())))
 
 ;; The ladder's gate: a persona past the next rung refuses, loudly.
 (show-screen! 'versus (versus-menu))

@@ -204,6 +204,30 @@
                 *host-log*))
 
 ;; --------------------------------------------------------------------- ;;
+;;  an idle piece still falls                                             ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The regression: gravity journals nothing — a blip per tick would be a
+;; machine gun — and the paint gate once read only the journal. So with no
+;; keys pressed the piece froze on screen while the world advanced under
+;; it, and the next keypress made it jump to where it had long belonged.
+(tk-section "idle fall")
+
+(boot-fresh!)
+(start-match! 'marathon '() 'free #f #f #f)
+(draw-game! *st*)
+(host-clock! 16 4)
+(host-run-frames! 4)      ; burn the start's dirty flag: a quiet board now
+(let ((y-before (falling-y (game-active *st*)))
+      (frames-before (host-frame-count)))
+  (host-clock! 16 70)                  ; ~1.1s idle: level 1 drops at 900ms
+  (host-run-frames! 70)
+  (tk-assert "idle gravity moved the piece"
+             (> (falling-y (game-active *st*)) y-before))
+  (tk-assert "the idle fall repainted the screen"
+             (> (host-frame-count) frames-before)))
+
+;; --------------------------------------------------------------------- ;;
 ;;  pausing paints the veil — the bug this suite exists to keep dead         ;;
 ;; --------------------------------------------------------------------- ;;
 

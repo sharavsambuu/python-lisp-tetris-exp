@@ -766,13 +766,30 @@
                   (set! *st* (drain-journal! *st*)))
                 #f)))))
 
+    ;; Gravity is silent by design: a fall journals nothing, or the speaker
+    ;; would blip once per tick — so the journal cannot tell the paint gate
+    ;; that the world moved while the player idled. Time moved the *visible*
+    ;; world when the active piece changed (it fell, or a lock spawned the
+    ;; next shape) or the clock crossed a whole second (the ultra's HUD
+    ;; counts in them). Everything else time can cause — a lock, a clear, a
+    ;; victory — journals, and the journal check upstream catches it.
+    (define (piece-fields p)
+      (if p
+          (list (falling-name p) (falling-x p) (falling-y p) (falling-rot p))
+          '()))
+
     ;; step-time answers a Result; the loop lives below the railway, so this
-    ;; little stair takes it down: state, plus whether time did anything.
+    ;; little stair takes it down: state, plus whether time changed anything
+    ;; the screen could show.
     (define (step-time-v st dt)
       (let ((r (step-time st dt)))
         (if (result-ok? r)
-            (values (ok-value r)
-                    (not (null? (game-journal (ok-value r)))))
+            (let ((st* (ok-value r)))
+              (values st*
+                      (or (not (equal? (piece-fields (game-active st))
+                                       (piece-fields (game-active st*))))
+                          (not (= (quotient (game-clock st) 1000)
+                                  (quotient (game-clock st*) 1000))))))
             (values st #f))))
 
     ;; ---------------------------------------------------------------- ;;

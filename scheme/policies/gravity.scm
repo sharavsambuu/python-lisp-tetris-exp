@@ -14,6 +14,15 @@
   (begin
     ;; Milliseconds per gravity tick. Level 1 starts at 900ms and the curve
     ;; tightens by 70ms a level until it hits the 60ms floor.
+    ;;
+    ;; A note on the feel this policy lives inside: the held-key repeat
+    ;; cadence (DAS delay/interval) is deliberately NOT here — the host's
+    ;; pump owns it (``REPEAT_DELAY_MS``/``REPEAT_INTERVAL_MS`` in
+    ;; ``host/pygame_host.py``), because the repeat must be exactly periodic
+    ;; in time, immune to frame jitter, in a way a Scheme-side frame timer
+    ;; is not. This file owns the gravity curve; the host owns the repeat
+    ;; clock; the conductor's ``repeat-able`` table (``conductor/input.scm``)
+    ;; decides which keys repeat. Tune the three together.
     (define* (drop-interval level (base: base 900) (step: step 70) (floor: floor-ms 60))
       (max floor-ms (- base (* step (- level 1)))))
 

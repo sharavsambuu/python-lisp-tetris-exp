@@ -30,11 +30,13 @@ drivers), and ``--autostart`` tells the Scheme title screen to skip itself.
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
 
 import pygame
+import lisp.evaluator
 
 from lisp import install_primitives, make_env
 from lisp.types import intern_keyword, intern
@@ -83,8 +85,23 @@ HELD_KEYS = ("left", "right", "down")
 #: fires ``key-repeat`` events for the keys that are due — exactly periodic
 #: in time, immune to frame jitter, and immune to the stale-credit bug a
 #: hand-threaded game timer grows.
+#:
+#: The Scheme side of the feel, for anyone tuning: the conductor's
+#: ``repeat-able`` table (``scheme/conductor/input.scm``) decides which
+#: keys may repeat at all, and the gravity those repeats race against is
+#: ``(tetris gravity)`` (``scheme/policies/gravity.scm``). The three
+#: cadences are one conversation — change them together.
 REPEAT_DELAY_MS = 150
 REPEAT_INTERVAL_MS = 40
+
+#: The per-frame step ceiling, in interpreter steps. `tick!` resets the
+#: root evaluation's step counter once per frame (see
+#: :meth:`PygameHost.tick`), so this bounds ONE frame — an honest painted
+#: frame costs a few thousand steps, an AI frame a few tens of thousands —
+#: and an endless loop inside a frame dies with a ``LispBudgetError``
+#: instead of hanging the game. It is deliberately NOT a session-length
+#: bound: a session is millions of honest steps across frames.
+FRAME_STEPS_BUDGET = 5_000_000
 
 #: name -> keycode, for the scripted-input mode (``--play``): a tiny bot that
 #: lives at the edge and types at the game so a headless smoke test crosses
@@ -125,6 +142,32 @@ BEEP_SPECS = {
 #: Cyrillic coverage (Ө and Ү included) is what makes the Mongolian locale
 #: drawable. A missing file is not fatal; the built-in default takes over.
 FONT_PATH = Path(__file__).resolve().parent / "assets" / "fsex2p00_public.ttf"
+
+def _reset_frame_budget() -> None:
+    """Zero the interpreter's step counter: one frame, one budget.
+
+    The DSL's step budget is a hang detector with a blind spot for exactly
+    this shape of program: the budget is *per root evaluation*, and the
+    whole game session is one root evaluation (``arcade-main``'s loop), so
+    the counter would only ever climb — which is why the host used to raise
+    it to a session-length 2e9 and lost the detector. Resetting it here
+    turns the same budget into a per-frame ceiling (``FRAME_STEPS_BUDGET``).
+
+    ``tick!`` is the one place this can live: the conductor calls it exactly
+    once per frame on every screen path (live match, result screen, menus),
+    so every frame starts with a fresh count no matter which path drew it.
+
+    ``_local``/``.budget`` are the pinned DSL's internals — there is no
+    public handle yet; if you own the DSL, a public ``reset_steps()`` (or a
+    per-frame budget hook) would let this drop the underscore. The getattr
+    chain degrades to "no reset" — the old session-length semantics —
+    rather than crashing, if the internals ever move.
+    """
+    local = getattr(lisp.evaluator, "_local", None)
+    budget = getattr(local, "budget", None) if local is not None else None
+    if budget is not None:
+        budget.steps = 0
+
 
 class PygameHost:
     """The edge object: one instance, installed into the env as primitives."""
@@ -198,7 +241,14 @@ class PygameHost:
     # ------------------------------------------------------------------ #
 
     def tick(self) -> int:
-        """One frame: hold ~60 fps, answer the elapsed milliseconds."""
+        """One frame: hold ~60 fps, answer the elapsed milliseconds.
+
+        Also the frame boundary for the interpreter's step budget — the
+        counter is reset here, once per frame, so ``FRAME_STEPS_BUDGET``
+        reads as "steps one frame may spend" and the hang detector still
+        detects hangs (see :func:`_reset_frame_budget`).
+        """
+        _reset_frame_budget()
         dt = self.clock.tick(60)
         # A hitch (GC, OS, a slow first frame) must not hand the conductor a
         # giant dt: gravity would leap rows and the repeat pump would land
@@ -457,15 +507,14 @@ SCHEME_DIR = Path(__file__).resolve().parent.parent / "scheme"
 
 def make_game_env(host: PygameHost):
     """The environment the game runs in: DSL profile + this host's primitives."""
-    # The step budget is the interpreter's hang detector for ONE top-level
-    # form — and the whole session is one top-level form (`arcade-main`'s
-    # loop). A painted frame costs roughly a thousand honest steps, so the
-    # 5M default dies about two minutes into a real game. The ceiling here
-    # is a session-length bound (hours of play), not a hang detector; the
-    # headless run's frame cap is what bounds an automated run.
-    import lisp.evaluator
-
-    lisp.evaluator.STEPS_BUDGET = 2_000_000_000
+    # The step budget is a PER-FRAME hang detector: `tick!` resets the root
+    # evaluation's counter once per frame (see `_reset_frame_budget`), so
+    # the ceiling here bounds one frame — an honest painted frame costs a
+    # few thousand steps, an AI frame a few tens of thousands — and a
+    # runaway loop in a frame dies with a LispBudgetError instead of
+    # hanging the game. It is not a session-length bound; a session is
+    # millions of honest steps spread across millions of fresh counts.
+    lisp.evaluator.STEPS_BUDGET = FRAME_STEPS_BUDGET
     env = make_env(search_paths=[SCHEME_DIR])
     install_primitives(env, host.primitives(), source="host/pygame_host.py")
     return env
@@ -473,31 +522,34 @@ def make_game_env(host: PygameHost):
 
 def main(argv: list[str] | None = None) -> int:
     """Run the game: build the env, load ``scheme/main.scm``, let Scheme drive."""
-    argv = list(sys.argv[1:] if argv is None else argv)
-    headless = "--headless" in argv
-    autostart = "--autostart" in argv
-    play_script = "--play" in argv
-    max_frames = None
-    if "--frames" in argv:
-        max_frames = int(argv[argv.index("--frames") + 1])
-    mode = None
-    if "--mode" in argv:
-        mode = argv[argv.index("--mode") + 1]
-    level = None
-    if "--level" in argv:
-        level = int(argv[argv.index("--level") + 1])
-    seed = None
-    if "--seed" in argv:
-        seed = int(argv[argv.index("--seed") + 1])
-    locale = None
-    if "--locale" in argv:
-        locale = argv[argv.index("--locale") + 1]
-    ai = "--ai" in argv
+    parser = argparse.ArgumentParser(
+        prog="python -m host",
+        description="Scheme Tetris — the pygame edge. The game itself is Scheme.",
+    )
+    parser.add_argument("--headless", action="store_true",
+                        help="SDL's dummy drivers: no window, no audio device")
+    parser.add_argument("--autostart", action="store_true",
+                        help="skip the title screen; boot straight into a match")
+    parser.add_argument("--play", action="store_true",
+                        help="the scripted bot types at the keymap (smoke runs)")
+    parser.add_argument("--frames", type=int, default=None, metavar="N",
+                        help="quit after N frames — the headless run's cap")
+    parser.add_argument("--mode", default=None, metavar="MODE",
+                        help="start this mode: marathon, sprint, ultra, cheese")
+    parser.add_argument("--level", type=int, default=None, metavar="N",
+                        help="the starting level")
+    parser.add_argument("--seed", type=int, default=None, metavar="N",
+                        help="the bag's seed: a steerable, replayable match")
+    parser.add_argument("--locale", default=None, metavar="LOCALE",
+                        help="the session's language (e.g. en, mn)")
+    parser.add_argument("--ai", action="store_true",
+                        help="the one-ply planner plays")
+    args = parser.parse_args(argv)
 
-    host = PygameHost(headless=headless, max_frames=max_frames,
-                      autostart=autostart, play_script=play_script,
-                      mode=mode, level=level, seed=seed, ai=ai,
-                      locale=locale)
+    host = PygameHost(headless=args.headless, max_frames=args.frames,
+                      autostart=args.autostart, play_script=args.play,
+                      mode=args.mode, level=args.level, seed=args.seed,
+                      ai=args.ai, locale=args.locale)
     env = make_game_env(host)
     from lisp import load_lisp
 

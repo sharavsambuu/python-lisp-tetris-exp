@@ -68,6 +68,10 @@ suite ends with a printed verdict or a red exception.
 # everything (the CI door):
 python -m pytest tests/ -q
 
+# the fast loop: pure domain + purity fence + shell traversal, seconds not
+# minutes — skips the whole-match walks and the subprocess smoke runs:
+python -m pytest tests/ -m "not slow" -q
+
 # everything, including the full run-all walk (it re-runs every Scheme
 # suite under one interpreter, so the default run skips it):
 SCHEME_RUN_ALL=1 python -m pytest tests/ -q
@@ -78,6 +82,11 @@ SHS_PATH=scheme:tests/scm env/bin/shs run tests/scm/run-all.scm
 # one suite, straight through the interpreter:
 SHS_PATH=scheme:tests/scm env/bin/shs run tests/scm/ui-tests.scm
 ```
+
+The `slow` marker (registered in `pytest.ini`) covers the suites that play
+whole matches or boot real subprocesses: the gameplay/shell Scheme walks,
+the painter bench, and all of `test_host_smoke.py`. The fast loop is for
+iterating; the CI door still runs everything.
 
 The step budget, honestly: the interpreter charges each top-level form its
 own hang-detector budget (5M steps by default), and that raise is *not* a

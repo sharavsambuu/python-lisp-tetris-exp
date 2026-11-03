@@ -1,4 +1,5 @@
-;;; conductor/arcade.scm — the conductor (an edge module, not a library).
+;;; conductor/arcade.scm — the conductor: session state, match lifecycle,
+;;; the AI, the loop.
 ;;;
 ;;; Like the view, this file speaks to the host (the window, the clock, the
 ;;; event pump, the speaker), so it lives at top level, outside the library
@@ -6,34 +7,27 @@
 ;;; ``rules/`` and ``content/`` — the conductor may call them; they may not
 ;;; know it.
 ;;;
+;;; The conductor is four files, one shared interaction environment, loaded
+;;; in this order (cross-file calls resolve at run time):
+;;;
+;;;   conductor/effects.scm   the journal drain: sounds and screen effects
+;;;   conductor/screens.scm   the menu values, the screens, the menu input
+;;;   conductor/input.scm     the key dispatch: events, keys, repeats
+;;;   conductor/arcade.scm    this file — the state they all share, the
+;;;                           match lifecycle, the AI, the frame loop
+;;;
 ;;; The product around one match, campaign-first with free play kept:
 ;;;
 ;;;   title ──enter──▶ campaign ──enter──▶ play      (a level ladder)
 ;;;     └────enter──▶ mode ──enter──▶ level ──enter──▶ play   ("Free play")
 ;;;
-;;; Escape means "back one step": a campaign and the mode/level screens
-;;; return to the title, and the title quits. From a live match it *pauses*
-;;; instead, so leaving a match takes a second escape — a stray keypress
-;;; should cost a keypress, not a game. The current screen is one symbol,
-;;; and `back!` is the whole of the rule.
-;;;
-;;; The *content* — the campaigns and the challenges ("modes") they are
-;;; built from — is data in ``(tetris campaign)``, so a new campaign is a
-;;; diff to a list, not to this file. A level selection ends in one call:
-;;;
-;;;   (start-match! challenge-or-config)
-;;;
-;;; This file also owns the two edge policies the match record must not
-;;; know about: the speaker's routing table, and the effects award table
-;;; (what a clear or a slam is worth in flash and shake). The AI lives here
-;;; too — its pure arithmetic is ``(tetris plan)``, its frame-budgeted
-;;; search and its steering are edge code, because a plan that costs frames
-;;; is a scheduling decision. Held-key repeat (DAS/ARR) is the HOST's
-;;; pump: it fires ``key-repeat`` events on its own clock, and this file
-;;; only decides which commands may repeat.
+;;; Escape means "back one step" (screens.scm); from a live match it *pauses*
+;;; instead, so leaving a match takes a second escape. The AI lives here —
+;;; its pure arithmetic is ``(tetris plan)``, its frame-budgeted search and
+;;; its steering are edge code, because a plan that costs frames is a
+;;; scheduling decision.
 ;;;
 ;;; Public names: arcade-main.
-
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
         (srfi 26)
@@ -49,7 +43,8 @@
 
     (define *screen* 'title)   ;; title | campaign | mode | level | play
     ;; The raw menu shape — `(entries cursor)` — until boot! builds the real
-    ;; one (make-menu is defined below; top-level defines run in order).
+    ;; one (make-menu lives in screens.scm; the conductor's files share one
+    ;; interaction environment).
     (define *menu* (list '() 0))
     (define *mode* 'marathon) ;; the free-play mode the player picked (a symbol)
     (define *level* 1)         ;; the free-play level a match starts on
@@ -78,138 +73,6 @@
     ;; The AI the "A" key turns on. The same search as the one-ply library,
     ;; so watching the arcade play is watching that arithmetic again.
     (define *weights* (weights 2.0 2.5 0.5 0.6))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  The speaker — which fact, which blip                               ;;
-    ;; ---------------------------------------------------------------- ;;
-    ;;
-    ;; The edge owns the speaker primitive; the *policy* — which fact
-    ;; outranks which — is a table here. One sound a turn: the loudest
-    ;; fact wins, in the order the table reads. A player's command is
-    ;; heard through the journal it journaled (a move, a rotation, a
-    ;; lock); there is no second, per-command table — the keymap's tags
-    ;; never matched its keys, and the journal has been the effects rail
-    ;; all along.
-
-    (define *sfx-fact*   ;; (fact-tag kind), loudest first
-      '((game-over "over")
-        (victory   "victory")
-        (level-up  "level-up")
-        (cleared   "clear")
-        (restarted "start")))
-
-    ;; A four-line clear headlines with the fanfare, not the plain blip —
-    ;; the speaker's one escalation the *size* of the clear earns.
-    (define (headline-kind tag ev fallback)
-      (if (and (eq? tag 'cleared)
-               (variant-match ev ((cleared rows) (= (length rows) 4))
-                                (else #f)))
-          "tetris"
-          fallback))
-
-    ;; The tier pitch a run's depth earns, capped so a ten-link run stays
-    ;; a chord, not a siren.
-    (define (combo-sfx n)
-      (string-append "combo-" (number->string (max 2 (min 5 n)))))
-
-    (define (sfx-journal! events)
-      (let loop ((order *sfx-fact*))
-        (if (null? order)
-            (for-each sfx-event! events)
-            (let ((hit (find (lambda (ev) (eq? (tag-of ev) (car (car order))))
-                             events)))
-              (if hit
-                  (begin
-                    (sfx! (headline-kind (car (car order)) hit
-                                         (cadr (car order))))
-                    ;; The combo announcer is the one overlay: a clear
-                    ;; frame headlines with the clear, and the run's tier
-                    ;; beep or the chain's opening rides on top of it.
-                    (for-each (lambda (ev)
-                                (variant-match ev
-                                  ((combo n) (sfx! (combo-sfx n)))
-                                  ((b2b) (sfx! "b2b"))
-                                  (else #f)))
-                              events))
-                  (loop (cdr order)))))))
-
-    ;; The per-event sounds that are not in the ranking (moves, rotations…)
-    ;; still play — the ranking only decides the turn's *headline*.
-    (define (sfx-event! ev)
-      (variant-match ev
-        ((moved) (sfx! "move"))
-        ((rotated) (sfx! "rotate"))
-        ((dropped _) (sfx! "drop"))
-        ((locked _) (sfx! "lock"))
-        ((hold-swapped) (sfx! "hold"))
-        ((hold-refused) (sfx! "denied"))
-        ;; The combo runs on top of the clear blip, like an announcer over
-        ;; the SFX — this arm answers the frames with no ranked fact.
-        ((combo n) (sfx! (combo-sfx n)))
-        ((b2b) (sfx! "b2b"))
-        (else #f)))
-
-    ;; Play the journal, then hand back the state with the paper trail
-    ;; emptied: the journal is read exactly once, at the edge. A `(locked _)`
-    ;; fact also bumps the edge-side lock counter — the AI's piece key reads
-    ;; it, because a journal that drains would otherwise change length and
-    ;; restart the search every frame.
-    (define (drain-journal! st)
-      (let ((events (reverse (game-journal st))))
-        (for-each
-         (lambda (ev)
-           (variant-match ev ((locked _) (set! *lock-count* (+ *lock-count* 1))) (else #f)))
-         events)
-        (sfx-journal! events)
-        (award-journal! events)
-        (journal-drained st)))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  The effects award table — what a fact is worth on the screen       ;;
-    ;; ---------------------------------------------------------------- ;;
-
-    ;; A clear count's flash colour: four lines outshine two, white is the
-    ;; anything-else answer.
-    (define *clear-palette*
-      '((1 (60 60 80))
-        (2 (90 90 110))
-        (3 (140 140 170))
-        (4 (80 200 220))))
-
-    (define *clear-flash-base-ms* 100)
-    (define *clear-flash-per-line-ms* 50)
-    (define *slam-shake-px* 2.5)
-    (define *level-up-shake-px* 1.0)
-    (define *shake-cap-px* 6.0)
-
-    (define (fx-thud! px)
-      (view-shake! (min *shake-cap-px* px)))
-
-    (define (award-journal! events)
-      (for-each
-       (lambda (ev)
-         (variant-match ev
-           ((cleared rows)
-            (let ((rgb (or (cadr (assq (length rows) *clear-palette*)) '(200 200 210))))
-              (view-flash! rgb (+ *clear-flash-base-ms*
-                                  (* (length rows) *clear-flash-per-line-ms*)))
-              (fx-thud! (min 2.0 (* (length rows) 0.5)))
-              ;; The beam: bars across the rows the clear took, burning as
-              ;; long as the flash — the animation that reads "these rows
-              ;; just left".
-              (view-clear-beam! rows)))
-           ((dropped d)
-            (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
-           ((hold-swapped) (view-hold-pulse!))
-           ((hold-refused) (fx-thud! 1.0))
-           ((combo n) (view-combo-pop! n))
-           ((b2b) (view-b2b-pop!))
-           ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
-           ((victory) (view-flash! '(230 230 240) 220))
-           ((game-over) (view-flash! '(160 40 40) 260))
-           (else #f)))
-       events))
-
     ;; ---------------------------------------------------------------- ;;
     ;;  The match — start, finish, the ladder walk                         ;;
     ;; ---------------------------------------------------------------- ;;
@@ -248,19 +111,6 @@
       (cond ((list? e) (join " " (map ->text e)))
             ((error-object? e) (error-object-message e))
             (else (->text e))))
-
-    (define (->text v)
-      (cond ((string? v) v)
-            ((symbol? v) (symbol->string v))
-            ((number? v) (number->string v))
-            (else ".")))
-
-    (define (join sep xs)
-      (let loop ((xs xs) (acc ""))
-        (cond ((null? xs) acc)
-              ((null? (cdr xs)) (string-append acc (->text (car xs))))
-              (else (loop (cdr xs) (string-append acc (->text (car xs)) sep))))))
-
     ;; A finished match: free play records a best, a campaign level marks
     ;; its rung done. Both are edge state — the match record stays a value.
     (define (settle-match! st)
@@ -295,75 +145,6 @@
                 (list-ref levels (- next 1))
                 #f))
           #f))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  Menus — a cursor over labelled choices: data, and text             ;;
-    ;; ---------------------------------------------------------------- ;;
-    ;;
-    ;; A menu is not a widget, it is a *value*: a list of (label value)
-    ;; entries and an index. Functional on purpose: `menu-move` returns a
-    ;; new menu rather than editing one.
-
-    (define (make-menu entries) (list entries 0))
-    (define (menu-entries m) (car m))
-    (define (menu-cursor m) (cadr m))
-    (define (menu-count m) (length (menu-entries m)))
-    (define (menu-at m i) (list-ref (menu-entries m) i))
-    (define (menu-selected m)
-      ;; The selected entry's *value* — the thing a screen acts on. The
-      ;; label may carry decoration (a done-mark, a best); the value stays
-      ;; the bare thing.
-      (cadr (menu-at m (menu-cursor m))))
-    (define (menu-label m)
-      (car (menu-at m (menu-cursor m))))
-    (define (menu-move m delta)
-      (let ((n (menu-count m)))
-        (if (= n 0)
-            m
-            (let* ((raw (+ (menu-cursor m) delta))
-                   (i (cond ((< raw 0) (- n 1))
-                            ((>= raw n) 0)
-                            (else raw))))
-              (list (menu-entries m) i)))))
-    (define (menu-set m i)
-      (if (and (>= i 0) (< i (menu-count m)))
-          (list (menu-entries m) i)
-          m))
-
-    ;; The menu as the lines the overlay draws: the cursor marked, the
-    ;; labels padded to the widest so the cursor column does not wander.
-    (define (spaces n)
-      (if (<= n 0) "" (string-append " " (spaces (- n 1)))))
-
-    (define (menu-width entries)
-      (let loop ((rest entries) (widest 0))
-        (if (null? rest)
-            widest
-            (loop (cdr rest)
-                  (max widest (string-length (->text (car (car rest)))))))))
-
-    (define (menu-lines m)
-      (let ((entries (menu-entries m))
-            (cursor (menu-cursor m))
-            (width (menu-width (menu-entries m))))
-        (let build ((rest entries) (i 0) (acc '()))
-          (if (null? rest)
-              (reverse acc)
-              (let* ((entry (car rest))
-                     (label (->text (car entry)))
-                     (row (string-append (if (= i cursor) "> " "  ")
-                                         label
-                                         (spaces (- width (string-length label))))))
-                (build (cdr rest) (+ i 1) (cons row acc)))))))
-
-    ;; A screen's text as overlay specs: (string size) pairs.
-    (define (menu-overlay m title hint)
-      (append (list (list title 30) (list "" 12))
-              (map (lambda (s) (list s 22)) (menu-lines m))
-              (if (string=? hint "")
-                  '()
-                  (list (list "" 12) (list hint 18)))))
-
     ;; ---------------------------------------------------------------- ;;
     ;;  The AI — plan (frame-budgeted), then steer one step                ;;
     ;; ---------------------------------------------------------------- ;;
@@ -484,299 +265,6 @@
                 (set! *plan-ready* #t))))
           (when *plan-ready*
             (steer-to! *st* *plan-x* *plan-rot*)))))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  The screens                                                        ;;
-    ;; ---------------------------------------------------------------- ;;
-
-    ;; Content translates at the edge by its id: the campaign/challenge
-    ;; libraries stay locale-blind, and the locale map owns the spellings.
-    ;; `tr-or` answers the content's own string until a translation lands.
-    (define (campaign-title-tr c)
-      (tr-or (string->symbol (string-append "campaign-"
-                                            (campaign-id c)))
-             (campaign-title c)))
-    (define (challenge-title-tr ch)
-      (tr-or (string->symbol (string-append "challenge-"
-                                            (challenge-id ch)))
-             (challenge-title ch)))
-    (define (challenge-goal-tr ch)
-      (tr-or (string->symbol (string-append "goal-"
-                                            (challenge-id ch)))
-             (challenge-goal ch)))
-    ;; A mode *symbol* ("free play picked sprint") in the locale's spelling.
-    (define (mode-name-tr m)
-      (tr-or (string->symbol (string-append "mode-" (symbol->string m)))
-             (symbol->string m)))
-
-    ;; The title: the campaigns, free play, the language setting, and the
-    ;; door out. The label decoration is a level count, read from the
-    ;; content; the language row's label re-reads the live locale, so the
-    ;; menu itself speaks the language it is about to switch to.
-    (define (title-menu)
-      (make-menu
-       (append
-        (map (lambda (c)
-               (list (string-append (campaign-title-tr c)
-                                    "  ("
-                                    (number->string
-                                     (length (campaign-levels c)))
-                                    " "
-                                    (tr 'menu-levels-word)
-                                    ")")
-                     (cons 'campaign c)))
-             (campaigns))
-        (list (list (tr 'menu-free-play) '(free-play))
-              (list (string-append (tr 'menu-language)
-                                   ": "
-                                   (locale-label (current-locale)))
-                    '(language))
-              (list (tr 'menu-quit) '(quit))))))
-
-    ;; The campaign ladder: each rung shows its title, and a checkmark when
-    ;; this session has already won it.
-    (define (campaign-menu camp)
-      (make-menu
-       (map (lambda (ch i)
-              (let ((key (level-key (campaign-id camp) i)))
-                (list (string-append (number->string i) ". "
-                                     (challenge-title-tr ch)
-                                     (if (level-done? *done* key)
-                                         (tr 'menu-done-mark)
-                                         ""))
-                      (cons 'challenge ch))))
-            (campaign-levels camp)
-            (iota (length (campaign-levels camp)) 1))))
-
-    ;; Free play: the four ways to play, in the locale's spelling, with the
-    ;; session's best beside the one that has one. The values are the mode
-    ;; *symbols* the domain's config-from spells; the BESTS TABLE stays
-    ;; keyed by the domain's English label, so a locale switch cannot
-    ;; orphan a score.
-    (define (mode-menu)
-      (make-menu
-       (map (lambda (m)
-              (let ((best (best-for *bests* (symbol->string m))))
-                (list (if (> best 0)
-                          (string-append (mode-name-tr m)
-                                         "  "
-                                         (tr 'menu-best)
-                                         " "
-                                         (number->string best))
-                          (mode-name-tr m))
-                      (cons 'mode m))))
-            (mode-names))))
-
-    ;; The level picker: one entry, moved with the arrows — the *value* is
-    ;; the number itself, so the label and the truth cannot drift apart.
-    (define (level-menu)
-      (make-menu (list (list (tr-fmt 'menu-level-n *level*)
-                             (cons 'level *level*)))))
-
-    (define (show-screen! screen menu)
-      (set! *screen* screen)
-      (set! *menu* menu)
-      (view-reset!)   ; menus wear no match's flash or beam
-      (set! *dirty* #t))
-
-    (define (back!)
-      (case *screen*
-        ((title) (quit!))
-        (else (show-screen! 'title (title-menu)))))
-
-    ;; The screen's own text, as overlay specs — the biggest type on the
-    ;; window, centred line by line.
-    (define (screen-overlay)
-      (case *screen*
-        ((title)
-         (menu-overlay *menu* "SCHEME TETRIS" (tr 'hint-title)))
-        ((campaign)
-         (menu-overlay *menu*
-                       (campaign-title-tr *campaign*)
-                       (string-append (challenge-goal-tr
-                                       (cdr (menu-selected *menu*)))
-                                      "   "
-                                      (tr 'hint-esc-back))))
-        ((mode)
-         (menu-overlay *menu* (tr 'title-free-play) (tr 'hint-mode)))
-        ((level)
-         (menu-overlay *menu*
-                       (string-append (tr 'title-starting-level)
-                                      " — "
-                                      (mode-name-tr *mode*))
-                       (tr 'hint-level)))
-        (else '())))
-
-    (define (draw-screen!)
-      (clear-screen! (color bg:))
-      (draw-well!)
-      (draw-panel! (lay left-x:) "SCHEME")
-      (draw-panel! (lay right-x:) "TETRIS")
-      (draw-overlay!
-       (append (list (list "" 10)) (screen-overlay)))
-      (apply-fx!)
-      (present!))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  Menu input                                                         ;;
-    ;; ---------------------------------------------------------------- ;;
-
-    ;; Menu keys are *strings* — the edge reports them by name — so the
-    ;; dispatch is string=?, never `case` (whose eqv? would compare the
-    ;; strings' identities, and two spellings of "down" are not one key).
-    (define (menu-key! key)
-      (cond ((string=? key "up")
-             (set! *menu* (menu-move *menu* -1)) (sfx! "menu-move") (set! *dirty* #t))
-            ((string=? key "down")
-             (set! *menu* (menu-move *menu* 1)) (sfx! "menu-move") (set! *dirty* #t))
-            ((string=? key "return") (choose!))
-            ((string=? key "escape") (back!) (sfx! "pause"))
-            ((string=? key "q") (quit!))
-            (else #f)))
-
-    ;; What the selected entry *means*, per screen — the whole of the
-    ;; shell's decisions, in one dispatch. A challenge's ladder position is
-    ;; its index in the campaign, so the level key a win writes is the same
-    ;; key the ladder screen read.
-    (define (choose!)
-      (let ((sel (menu-selected *menu*)))
-        (case (car sel)
-          ((campaign)
-           (set! *campaign* (cdr sel))
-           (show-screen! 'campaign (campaign-menu (cdr sel)))
-           (sfx! "menu-select"))
-          ((challenge)
-           ;; The ladder position: the menu stored the level object itself,
-           ;; so the same object is the answer — find it with a walk, not
-           ;; list-index (whose eq? can never match two alist values).
-           (let* ((ch (cdr sel))
-                  (idx (let find ((ls (campaign-levels *campaign*)) (i 0))
-                         (cond ((null? ls) 0)
-                               ((eq? (car ls) ch) i)
-                               (else (find (cdr ls) (+ i 1)))))))
-             (start-match! (challenge-mode ch) (challenge-options ch)
-                           'campaign ch
-                           (level-key (campaign-id *campaign*) (+ idx 1))
-                           (+ idx 1))))
-          ((free-play) (show-screen! 'mode (mode-menu)) (sfx! "menu-select"))
-          ((language)
-           ;; The setting IS the entry: RETURN cycles the locale, the menu
-           ;; rebuilds (its labels are now in the new locale), and the
-           ;; cursor stays on the language row so a second RETURN cycles
-           ;; back. `menu-set` clamps, so the rebuild cannot walk the
-           ;; cursor off the end.
-           (cycle-locale!)
-           (set! *menu* (menu-set (make-menu (menu-entries (title-menu)))
-                                  (menu-cursor *menu*)))
-           (sfx! "menu-move")
-           (set! *dirty* #t))
-          ((mode)
-           (set! *mode* (cdr sel))
-           (show-screen! 'level (level-menu))
-           (sfx! "menu-select"))
-          ((level)
-           (start-match! *mode*
-                         (list (list 'starting-level *level*))
-                         'free #f #f #f))
-          ((quit) (quit!))
-          (else #f))))
-
-    ;; The level picker's arrows: left/right step, up/down skip five — and
-    ;; the menu re-renders because the label carries the number.
-    (define (level-step! delta)
-      (set! *level* (max 1 (min *level-count* (+ *level* delta))))
-      (set! *menu* (level-menu))
-      (set! *dirty* #t))
-
-    (define (menu-key-with-level! key)
-      (cond ((string=? key "left")  (level-step! -1))
-            ((string=? key "right") (level-step! 1))
-            ((string=? key "up")    (level-step! 5))
-            ((string=? key "down")  (level-step! -5))
-            (else (menu-key! key))))
-
-    ;; ---------------------------------------------------------------- ;;
-    ;;  The play screen — one frame of live match                          ;;
-    ;; ---------------------------------------------------------------- ;;
-    ;;
-    ;; The order is the discipline: events first (a key press lands *before*
-    ;; the gravity of the frame it happened in), then the AI's one step,
-    ;; then the repeat policy, then gravity, then the draw. A frame draws
-    ;; only when something happened.
-
-    ;; The keys a *held* key may repeat — one-shots (rotate, hard drop,
-    ;; hold, restart) stay one per physical press. The host pumps the
-    ;; repeats; this table is only the conductor's "which repeats mean
-    ;; anything" decision.
-    (define repeat-able '("left" "right" "down"))
-
-    ;; One polled event against the live match. This runs ONLY while the
-    ;; phase is playing — a paused or finished match is a *decision point*,
-    ;; and its keys go through `play-key!` instead. The state after the
-    ;; event is the answer; held-key state lives in the host.
-    (define (apply-event st ev)
-      (let ((type (cadr (assq type: ev))))
-        (case type
-          ((quit)
-           (quit!)
-           st)
-          ((key-down)
-           (let ((key (cadr (assq key: ev))))
-             (cond
-               ;; The toggles: the AI and the ghost are the player's.
-               ((string=? key "a")
-                (set! *ai* (not *ai*))
-                (reset-ai!)
-                (sfx! "menu-move")
-                (set! *dirty* #t)   ; the toggle must show at once
-                st)
-               ((string=? key "g")
-                (show-ghost! (not (show-ghost?)))
-                (sfx! "menu-move")
-                (set! *dirty* #t)   ; the ghost must show at once
-                st)
-               ;; Escape from a live match pauses rather than leaves — a
-               ;; stray keypress should cost a keypress, not a game.
-               ((string=? key "escape")
-                (sfx! "pause")
-                (set! *dirty* #t)   ; the veil must paint this frame
-                (game-with st phase: (paused)))
-               ((string=? key "p")
-                (sfx! "pause")
-                (set! *dirty* #t)   ; the veil must paint this frame
-                (game-with st phase: (paused)))
-               ((string=? key "q")
-                (quit!)
-                st)
-               ;; Everything else goes through the keymap, once. The
-               ;; blip, if any, is the journal's — the frame's drain
-               ;; speaks for the move.
-               (else
-                (let ((cmd (key->command key)))
-                  (if cmd
-                      (let ((r (apply-command st cmd)))
-                        (if (result-ok? r) (ok-value r) st))
-                      st))))))
-          ((key-repeat)
-           ;; The host says a key is still down. Only the repeatable
-           ;; commands glide; one-shots ignore their repeats, and repeats
-           ;; are deliberately silent — 25 blips a second is a machine
-           ;; gun, not feedback.
-           (let ((key (cadr (assq key: ev))))
-             (if (member key repeat-able)
-                 (let ((cmd (key->command key)))
-                   (if cmd
-                       (let ((r (apply-command st cmd)))
-                         (if (result-ok? r) (ok-value r) st))
-                       st))
-                 st)))
-          (else st))))
-
-    (define (apply-events st evs)
-      (if (null? evs)
-          st
-          (apply-events (apply-event st (car evs)) (cdr evs))))
-
     ;; One frame of the live match. The order is the discipline: events
     ;; first (a key press lands *before* the gravity of the frame it
     ;; happened in) — and the state the events produced is SAVED, or the
@@ -832,7 +320,6 @@
                           (not (= (quotient (game-clock st) 1000)
                                   (quotient (game-clock st*) 1000))))))
             (values st #f))))
-
     ;; ---------------------------------------------------------------- ;;
     ;;  The loop                                                           ;;
     ;; ---------------------------------------------------------------- ;;
@@ -902,93 +389,6 @@
                 (set! *dirty* #t)
                 (settle-match! *st*)))
           (set! *settled* #f)))
-
-    ;; The key a live match answers, by phase: steering keys while it runs,
-    ;; the onward keys once it is a result.
-    (define (play-key! key)
-      (cond
-        ;; From a live match, escape pauses rather than leaves — a stray
-        ;; keypress should cost a keypress, not a game.
-        ((and (string=? key "escape") (phase-playing? *st*))
-         (set! *st* (game-with *st* phase: (paused)))
-         (sfx! "pause"))
-        ;; A result is a decision point: onward, again, or out.
-        ((or (phase-over? *st*) (phase-won? *st*))
-         (cond ((string=? key "return")
-                (if (phase-won? *st*)
-                    (let ((next (next-challenge)))
-                      (if next
-                          (start-match! (challenge-mode next)
-                                        (challenge-options next)
-                                        'campaign next
-                                        (level-key (campaign-id *campaign*)
-                                                   (+ 1 *playing-index*))
-                                        (+ 1 *playing-index*))
-                          (show-screen! 'title (title-menu))))
-                    (show-screen! 'title (title-menu))))
-               ((string=? key "r")
-                ;; The replay round trip: config -> name -> options -> config.
-                ;; `config-mode->name` spells the name the *menus* use — a
-                ;; string — but `start-match!` validates against the domain's
-                ;; closed symbol set, so the name crosses back as a symbol.
-                ;; A raw string here reads as an unknown mode and the guard
-                ;; dumps the player at the title with only a console message.
-                (start-match! (string->symbol (config-mode->name (game-config *st*)))
-                              (config-options (game-config *st*))
-                              *origin* *challenge* *playing-key* *playing-index*))
-               ((string=? key "escape")
-                (show-screen! 'title (title-menu))
-                (sfx! "pause"))
-               ((string=? key "q") (quit!))
-               (else #f)))
-        ;; A paused match: resume, replay, or leave.
-        ((phase-paused? *st*)
-         (cond ((string=? key "p")
-                (set! *st* (game-with *st* phase: (playing)))
-                (set! *dirty* #t)   ; back to the live picture at once
-                (sfx! "pause"))
-               ((string=? key "r")
-                (set! *st* (ok-value (apply-command *st* (restart))))
-                (set! *settled* #f)
-                (sfx! "start"))
-               ((string=? key "escape")
-                (show-screen! 'title (title-menu))
-                (sfx! "pause"))
-               ((string=? key "q") (quit!))
-               (else #f)))
-        ;; A live match: the keymap owns it.
-        (else
-         (let ((cmd (key->command key)))
-           (if cmd
-               (let ((r (apply-command *st* cmd)))
-                 (if (result-ok? r) (set! *st* (ok-value r)) #f)
-                 (set! *dirty* #t))
-               #f)))))
-
-    (define (dispatch-key! key)
-      (case *screen*
-        ((title) (menu-key! key))
-        ((campaign) (menu-key! key))
-        ((mode) (menu-key! key))
-        ((level) (menu-key-with-level! key))
-        ((play) (play-key! key))
-        (else #f)))
-
-    ;; The host pumps key-repeat for held keys; the menus honor it for the
-    ;; MOVEMENT keys only — a held RETURN must not start match after match,
-    ;; and a held ESC must not fly back through every screen at once.
-    (define (dispatch-repeat! key)
-      (case *screen*
-        ((title campaign mode)
-         (if (or (string=? key "up") (string=? key "down"))
-             (menu-key! key)
-             #f))
-        ((level)
-         (if (member key '("left" "right" "up" "down"))
-             (menu-key-with-level! key)
-             #f))
-        (else #f)))
-
     (define (menu-step!)
       (let ((dt (tick!))
             (evs (poll-events!)))
@@ -1071,4 +471,3 @@
                        (newline))
                      #f)
                  (show-screen! 'title (title-menu)))))))
-

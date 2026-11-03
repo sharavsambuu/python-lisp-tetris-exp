@@ -56,7 +56,10 @@ scheme/
 ├── content/campaign.scm      (tetris campaign) — challenges, ladders, progress
 ├── policies/gravity.scm      (tetris gravity)  — pacing curves, DAS knobs
 ├── presentation/view.scm     the painter (edge module)
-├── conductor/arcade.scm      the shell: screens, input, AI, effects (edge)
+├── conductor/effects.scm     the effects rail: speaker policy, screen awards (edge)
+├── conductor/screens.scm     the menu values, the screens, the menu input (edge)
+├── conductor/input.scm       the key dispatch: events, keys, repeats (edge)
+├── conductor/arcade.scm      the conductor: session state, match lifecycle, AI, loop (edge)
 └── main.scm                  loads contexts in order, runs (arcade-main)
 ```
 
@@ -126,3 +129,31 @@ keys → gravity banks the frame's milliseconds → draw only if the world
 changed → drain the journal into the speaker and the effects rail → loop.
 A quiet frame costs a few comparisons; a loud one crosses the seam a few
 hundred times, all batched.
+
+# Known limits
+
+Said plainly, because a demo that hides its ceiling is a sales pitch:
+
+- **Interpreter speed.** Every frame runs through a pure-Python
+  tree-walking interpreter: a painted frame costs a few thousand
+  interpreter steps, an AI-assisted frame a few tens of thousands. That
+  is fine at Tetris's pace and wrong for anything that needs real
+  per-frame math — physics, many sprites, shaders. The host's painting
+  and event pump are native; the *game* is not.
+- **The step budget is per frame.** The DSL's step budget is a hang
+  detector scoped to one root evaluation, and the whole session is one
+  root evaluation (`arcade-main`'s loop) — so the host resets the
+  counter in `tick!`, once per frame, and `FRAME_STEPS_BUDGET`
+  (5M) bounds a single frame. An endless loop in a frame dies with a
+  `LispBudgetError`; a session runs forever under fresh counts. The
+  reset touches the pinned DSL's thread-local internals (there is no
+  public handle yet); if the internals move, the getattr chain degrades
+  to the old session-length semantics rather than crashing.
+- **One runtime, pinned.** The game runs on one interpreter, pinned to
+  one commit of one repository. That is deliberate — the DSL is the
+  whole runtime, and a HEAD change can break it — but it does mean the
+  project's life is tied to that repo.
+- **Scheme literacy.** The entire game is R7RS libraries, SRFIs, and
+  hygienic macros. The [`docs/tutorial/`](docs/tutorial/README.md)
+  series exists to get a contributor over that wall; without it, the
+  bus factor on this code is small.

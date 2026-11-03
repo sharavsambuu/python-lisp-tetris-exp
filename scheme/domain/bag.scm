@@ -14,6 +14,7 @@
           (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each)) (tetris geometry))
   (export make-bag
           bag-queue
+          bag-seed
           bag-next
           bag-peek
           bag-refill-from)
@@ -69,5 +70,10 @@
     ;; The next n piece names, without consuming them. A peek into the future.
     (define (bag-peek st n)
       (take (car st) n))
+
+    ;; The seed half of the bag state — the generator's position. A replay
+    ;; reads it instead of reaching into the pair: the representation is
+    ;; this library's business alone.
+    (define (bag-seed st) (cdr st))
 
     (define (bag-queue st) (car st))))

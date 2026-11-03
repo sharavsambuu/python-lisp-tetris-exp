@@ -376,7 +376,7 @@
     ;; board re-seeds from the bag's generator, so the dig is fresh.
     (define (restart-match state)
       (let* ((config (game-config state))
-             (seed (cdr (game-bag state)))
+             (seed (bag-seed (game-bag state)))
              (board (if (cheese-config? config)
                         (cheese-board seed (config-cheese-rows config))
                         (make-board))))

@@ -25,6 +25,10 @@
 (load "content/locale")
 
 (load "presentation/view")
+
+(load "conductor/effects")
+(load "conductor/screens")
+(load "conductor/input")
 (load "conductor/arcade")
 
 (arcade-main)

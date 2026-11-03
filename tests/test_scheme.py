@@ -12,19 +12,34 @@ import lisp.evaluator
 from lisp import load_lisp, make_env, run
 
 # The domain tests steer a whole sprint match through the one-ply planner —
-# hundreds of thousands of interpreter steps in one top-level form. The
-# default 5M-step budget is a hang detector for production runs; a test that
-# *is* a long computation asks for more. The module-scope raise is the floor
-# the first suite loads under; `_load` re-raises the budget per suite, so
-# one suite's ceiling can never leak into another's.
-lisp.evaluator.STEPS_BUDGET = 50_000_000
+# hundreds of thousands of interpreter steps in one top-level form. In
+# production the step budget is a PER-FRAME hang detector (the host's
+# `tick!` resets the counter each frame); a test that *is* a long
+# computation in one form asks for more. `_load` raises the budget per
+# suite, and the autouse fixture below restores it afterwards, so one
+# suite's ceiling can never leak into another's.
+DEFAULT_BUDGET = 50_000_000
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEME = ROOT / "scheme"
 TESTS = ROOT / "tests" / "scm"
 
 
-def _load(name, extra_paths=(), budget=50_000_000):
+@pytest.fixture(autouse=True)
+def _restore_step_budget():
+    """Snapshot the interpreter's step budget around every test.
+
+    `_load` (and some tests directly) set `lisp.evaluator.STEPS_BUDGET` —
+    a module global shared by every suite in the process. Whatever a test
+    raises it to, this puts it back, so a leaked ceiling can never quietly
+    loosen another suite's hang detector.
+    """
+    saved = lisp.evaluator.STEPS_BUDGET
+    yield
+    lisp.evaluator.STEPS_BUDGET = saved
+
+
+def _load(name, extra_paths=(), budget=DEFAULT_BUDGET):
     lisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
@@ -35,6 +50,7 @@ def test_pure_domain():
     _load("domain-tests.scm")
 
 
+@pytest.mark.slow
 def test_gameplay_behavior():
     """Whole matches through the real conductor loop, against the fake host."""
     _load("gameplay-tests.scm", extra_paths=[TESTS])
@@ -45,11 +61,13 @@ def test_ui_behavior():
     _load("ui-tests.scm", extra_paths=[TESTS])
 
 
+@pytest.mark.slow
 def test_shell_transitions():
     """Every screen transition, keys through the fake host's event queue."""
     _load("shell-tests.scm", extra_paths=[TESTS])
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not os.environ.get("SCHEME_RUN_ALL"),
                     reason="run-all re-runs every Scheme suite under one "
                            "env — the slow walk. SCHEME_RUN_ALL=1 to "
@@ -91,6 +109,7 @@ def test_domain_modules_are_pure_r7rs_libraries():
             assert word not in text, f"{rel} names the host: {word}"
 
 
+@pytest.mark.slow
 def test_painter_keeps_up_with_a_full_board():
     """draw-board! on a full board stays far under the frame budget.
 

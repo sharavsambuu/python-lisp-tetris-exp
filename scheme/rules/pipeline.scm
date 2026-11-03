@@ -127,23 +127,50 @@
                     (loop (cdr ks))))))))
 
     ;; Fall n rows, scoring the drop. The kind ('soft or 'hard) names the
-    ;; price a row carries.
+    ;; price a row carries — read from the mode's policy, so a race's fall
+    ;; is free where a marathon's is worth a point.
     (define (fall-n state d kind)
       (let* ((p (game-active state))
              (p* (make-falling (falling-name p) (falling-x p)
-                               (+ (falling-y p) d) (falling-rot p))))
+                               (+ (falling-y p) d) (falling-rot p)))
+             (rate (if (eq? kind 'hard)
+                       (policy-hard-row (policy-of state))
+                       (policy-soft-row (policy-of state)))))
         (ok (with-event
              (game-with state
                         active: p*
-                        score: (+ (game-score state) (drop-points kind d)))
+                        score: (+ (game-score state) (* d rate)))
              (dropped d)))))
 
 
 
+    ;; The match's scoring flavor — the mode's policy, read off the recipe.
+    ;; One record construction per scored step; the policy is tiny data.
+    (define (policy-of state)
+      (scoring-policy-for (config-mode-tag (game-config state))))
+
+    ;; How many of the cleared rows carried garbage — the dig's harvest,
+    ;; read off the board *before* the clear erased it. A row counts when
+    ;; it held at least one garbage cell: cheese pays for the garbage the
+    ;; clear lifted, whatever else shared the row.
+    (define (garbage-rows-in rows board)
+      (let loop ((ys rows) (n 0))
+        (if (null? ys)
+            n
+            (loop (cdr ys)
+                  (+ n (if (let loop-x ((x 0))
+                             (cond ((>= x matrix-width) #f)
+                                   ((eq? (board-ref board x (car ys)) 'g) #t)
+                                   (else (loop-x (+ x 1)))))
+                           1
+                           0))))))
+
     ;; One pull of descent: down a row, or — if the floor is there — the
     ;; lock track. `loud?` decides whether the move is journaled: a
     ;; player's soft-drop keypress is a fact worth a blip, but gravity is
-    ;; the clock's work, and an idle match should be silent.
+    ;; the clock's work, and an idle match should be silent. The same flag
+    ;; prices the fall: **gravity never pays** — the soft-drop row rate is
+    ;; the *player's* wage, and the clock earns nothing in any mode.
     (define (fall-by-one state loud?)
       (let* ((p (game-active state))
              (ny (+ (falling-y p) 1)))
@@ -154,7 +181,10 @@
                                                        (falling-x p) ny
                                                        (falling-rot p))
                                  score: (+ (game-score state)
-                                           (drop-points 'soft 1)))))
+                                           (if loud?
+                                               (policy-soft-row
+                                                (policy-of state))
+                                               0)))))
               (ok (if loud? (with-event s* (moved)) s*)))
             (lock-and-spawn state))))
 
@@ -193,10 +223,28 @@
                        (level* (level-for lines*
                                           (config-starting-level
                                            (game-config s1))))
-                       (base (clear-points n (game-level s1)))
-                       (awarded (if (game-b2b s1) (b2b-points base) base))
-                       (bonus (combo-bonus (game-combo s1) (game-level s1)))
-                       (points (+ awarded bonus))
+                       ;; The mode's flavor scales the classic table —
+                       ;; the race's clear pays double, the score attack's
+                       ;; chains double — and cheese's harvest pays its
+                       ;; dig rate on every cleared row that carried
+                       ;; garbage.
+                       (pol (policy-of s1))
+                       (base (scale-points (clear-points n (game-level s1))
+                                           (policy-clear-mult pol)))
+                       (awarded (if (game-b2b s1)
+                                    ;; The b2b half-step travels as halves:
+                                    ;; three halves floored, four if the
+                                    ;; mode's chains pay double.
+                                    (quotient (* base
+                                                 (policy-b2b-halves pol))
+                                              2)
+                                    base))
+                       (bonus (scale-points
+                               (combo-bonus (game-combo s1) (game-level s1))
+                               (policy-combo-mult pol)))
+                       (dug (* (policy-garbage-row pol)
+                               (garbage-rows-in rows (game-board s1))))
+                       (points (+ awarded bonus dug))
                        (s3 (game-with s2
                                       lines: lines*
                                       score: (+ (game-score s2) points)

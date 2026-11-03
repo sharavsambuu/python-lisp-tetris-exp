@@ -225,6 +225,105 @@
            (memq 'cleared (map tag-of (game-journal *st*))))
 
 ;; --------------------------------------------------------------------- ;;
+;;  the scoring flavors — every mode pays its own way                       ;;
+;; --------------------------------------------------------------------- ;;
+
+;; One principle crosses all four modes: **gravity never pays.** The
+;; regression the player felt: an idled piece used to bank a soft-drop
+;; point a row, so a match idled to the floor quietly out-scored a
+;; careful one.
+(tk-section "scoring flavors")
+
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let ((before (game-score *st*)))
+  (host-clock! 16 70)                  ; ~1.1s idle: level 1 drops at 900ms
+  (host-run-frames! 70)
+  (tk-check "idle gravity paid nothing" (game-score *st*) before)
+  (tk-assert "the piece fell anyway"
+             (> (falling-y (game-active *st*)) 0))
+  ;; The player's soft drop is the wage gravity doesn't earn: exactly one
+  ;; point a row in the classic mode.
+  (set! *st* (result-unwrap-or (apply-command *st* (down)) *st*))
+  (tk-check "a soft drop paid one point" (game-score *st*) (+ before 1)))
+
+;; A race pays for speed, not for falling: drops are free, and a clear is
+;; worth double. The same crafted double that paid 300 in the classic
+;; pays 600 here.
+(boot-into! 'sprint '((target-lines 2)))
+(set! *st* (result-unwrap-or (apply-command *st* (down)) *st*))
+(set! *st* (result-unwrap-or (apply-command *st* (down)) *st*))
+(tk-check "a sprint's soft drop is free" (game-score *st*) 0)
+(let* ((hole 2)
+       (b (let loop ((bd (game-board *st*)) (ys '(18 19)))
+            (if (null? ys)
+                bd
+                (loop (board-place bd 'i
+                                   (map (lambda (x) (cons x (car ys)))
+                                        (filter (lambda (x) (not (= x hole)))
+                                                (iota matrix-width))))
+                      (cdr ys))))))
+  (set! *st* (game-with *st*
+                        board: b
+                        active: (make-falling 'i 3 0 1))))
+(let drive ((i 0))
+  (let* ((p (game-active *st*))
+         (done (and (= (falling-x p) 0) (= (falling-rot p) 1))))
+    (cond (done
+           (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+          ((> i 8) (error "could not steer the crafted piece"))
+          (else
+           (if (not (= (falling-rot p) 1))
+               (set! *st* (result-unwrap-or (apply-command *st* (rotate-cw)) *st*))
+               (set! *st* (result-unwrap-or (apply-command *st* (left)) *st*)))
+           (drive (+ i 1))))))
+(tk-check "the race's double paid double" (game-score *st*) 600)
+(tk-check "the race's hard drop was free" (game-score *st*) 600)
+
+;; The score attack: every drop still pays its classic wage.
+(boot-into! 'ultra '((time-limit 60)))
+(set! *st* (game-with *st* active: (make-falling 'o 4 0 0)))
+(set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*))
+;; An O piece falls 18 rows on an empty well: 18 x 2.
+(tk-check "ultra's hard drop paid two a row" (game-score *st*) 36)
+
+;; The dig: the harvest pays. Two full garbage rows lifted at once pay
+;; the clear plus 200 a garbage row — and emptying the board wins.
+(boot-into! 'cheese '((cheese-rows 2)))
+(let ((b (let loop ((bd (make-board)) (ys '(18 19)))
+           (if (null? ys)
+               bd
+               (loop (board-place bd 'g
+                                  (map (lambda (x) (cons x (car ys)))
+                                       (iota matrix-width)))
+                     (cdr ys))))))
+  (set! *st* (game-with *st* board: b active: (make-falling 'i 3 17 0))))
+(set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*))
+;; 300 for the double, 400 for the two garbage rows it lifted.
+(tk-check "the dig paid its harvest" (game-score *st*) 700)
+(tk-check "a dug-clean board is a win" (phase-won? *st*) #t)
+
+;; And the policy table itself, one row per mode — a fifth way to play
+;; edits this table and nothing else.
+(tk-check "marathon is the classic"
+          (list (policy-soft-row (scoring-policy-for 'marathon))
+                (policy-hard-row (scoring-policy-for 'marathon))
+                (policy-clear-mult (scoring-policy-for 'marathon))
+                (policy-combo-mult (scoring-policy-for 'marathon))
+                (policy-garbage-row (scoring-policy-for 'marathon)))
+          '(1 2 1 1 0))
+(tk-check "sprint falls free and clears double"
+          (list (policy-soft-row (scoring-policy-for 'sprint))
+                (policy-clear-mult (scoring-policy-for 'sprint)))
+          '(0 2))
+(tk-check "ultra's chains pay double"
+          (list (policy-combo-mult (scoring-policy-for 'ultra))
+                (policy-b2b-halves (scoring-policy-for 'ultra)))
+          '(2 4))
+(tk-check "cheese pays the dig"
+          (policy-garbage-row (scoring-policy-for 'cheese)) 200)
+
+;; --------------------------------------------------------------------- ;;
 ;;  a sprint win, steered by the built-in AI, through the real loop          ;;
 ;; --------------------------------------------------------------------- ;;
 

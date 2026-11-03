@@ -613,6 +613,30 @@
 (tk-assert "the persona's AI locks pieces on its side" (> *r-lock-count* 0))
 (tk-assert "both sides still in the fight" (not (duel-over? *duel*)))
 
+;; A lock the fall produced must reach the rail too. The edge reads the
+;; journals before the exchange drains them — but it used to read them
+;; before the worlds advanced, so gravity's own locks and clears were born
+;; and drained in the same call: no lock sound, no clear beam. The advance
+;; is a separate pure step now, and the award sits between it and the
+;; exchange.
+(start-duel! (persona-by-id 'wall))
+(let* ((l (duel-left *duel*))
+       (p (game-active l))
+       (ly (landing-y-at l (falling-x p) (falling-rot p))))
+  (set! *duel*
+        (duel-with-left *duel*
+          (game-with l
+                     level: 13
+                     active: (make-falling (falling-name p)
+                                           (falling-x p) ly
+                                           (falling-rot p))))))
+(let ((before *lock-count*))
+  (host-clock! 100 1)             ; one clamped 66ms frame, a 60ms tick
+  (host-run-frames! 1)
+  (tk-assert "a gravity lock reaches the effects rail"
+             (> *lock-count* before)))
+(close-duel!)
+
 ;; A loss: the left side tops out, the record keeps it, the ladder
 ;; does not move.
 (start-duel! (persona-by-id 'wall))
@@ -719,6 +743,78 @@
           (persona-id *persona*) 'blitz)
 (close-duel!)
 (tk-check "leaving the duel lands on the title" (screen) 'title)
+
+;; --------------------------------------------------------------------- ;;
+;;  the duel's AI re-reads a board that garbage moved                      ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The search cache is keyed by (lock count, piece) — but garbage raises
+;; the AI's well under the same airborne piece, so the board's identity
+;; belongs in the key too. Without it the planner kept the old column
+;; heights and steered into a board that no longer existed.
+(start-duel! (persona-by-id 'wall))
+(let* ((ws (persona-weights *persona*))
+       (right (duel-right *duel*)))
+  (best-placement right ws 40 0)
+  (let ((before *search-hts*))
+    (set! *duel*
+          (duel-with-right *duel*
+            (result-unwrap-or (receive-garbage right 3) right)))
+    (best-placement (duel-right *duel*) ws 40 0)
+    (tk-assert "the AI's columns are re-read after garbage"
+               (not (eq? *search-hts* before)))))
+(close-duel!)
+
+;; --------------------------------------------------------------------- ;;
+;;  leaving the duel — the result and the forfeit are decision points       ;;
+;; --------------------------------------------------------------------- ;;
+
+;; RETURN on a decided duel closes the fight. The frame must stop there:
+;; it used to keep simulating with no duel record and raise.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-left *duel*
+        (game-with (duel-left *duel*) phase: (over))))
+(set! *duel* (duel-exchange *duel*))
+(host-tap! "return")
+(tk-check "return on the duel result reaches the title" (screen) 'title)
+(tk-assert "the forced result settled on the way out" *settled*)
+(tk-check "leaving the duel restores the window" *host-window*
+          (list window-width window-height))
+
+;; ESC from a paused duel is the forfeit: a loss, settled once, then out.
+(start-duel! (persona-by-id 'wall))
+(host-tap! "p")
+(tk-assert "p pauses the duel" *duel-paused*)
+(host-tap! "escape")
+(tk-check "escape from a paused duel forfeits to the title" (screen) 'title)
+(tk-assert "the forfeit settled" *settled*)
+
+;; --------------------------------------------------------------------- ;;
+;;  the solo-only keys stay out of the fight                               ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The duel routes the player's side through the same `apply-events` the
+;; solo match uses, so the solo toggles used to leak into a live fight:
+;; `a` reset the shared AI search the persona was mid-plan on, `d` flipped
+;; free play's pacing director, and `r` restarted only the player's half —
+;; clearing its board, clock, and lines while the opponent kept playing,
+;; and leaving the leash's clock ahead of the fresh match so the duel
+;; director stopped correcting. All three are inert now.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-left *duel*
+        (game-with (duel-left *duel*) lines: 7)))
+(let ((ai *ai*) (director *director*))
+  (host-tap! "a")
+  (host-tap! "d")
+  (host-tap! "r")
+  (tk-check "a does not toggle the AI in a duel" *ai* ai)
+  (tk-check "d does not toggle the pacing director in a duel"
+            *director* director)
+  (tk-check "r does not restart the player's half"
+            (game-lines (duel-left *duel*)) 7))
+(close-duel!)
 
 (tk-report! "gameplay")
 

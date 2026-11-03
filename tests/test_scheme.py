@@ -165,3 +165,39 @@ def test_duel_painter_keeps_up_with_two_full_boards():
     assert per_call_ms < 60, (
         f"draw-duel! on two full boards takes {per_call_ms:.0f} ms — the "
         "two-board worst case cannot hold the frame rate")
+
+
+@pytest.mark.slow
+def test_duel_rect_cache_survives_a_shake():
+    """A slam's shake must not rebuild both full boards on every frame.
+
+    The rect cache is keyed by (board, origin, shake). A duel needs two
+    origins times the seven shake offsets the decay can round to; the
+    cache once held five entries, so adding one origin's new offset
+    evicted the other origin's, and every frame of a decaying shake paid
+    the rebuild — measured ~53 ms a frame instead of ~7 ms. Warm every
+    offset, then cycle them: hits should cost about a stable frame.
+    """
+    import time
+
+    lisp.evaluator.STEPS_BUDGET = 200_000_000
+    env = make_env(search_paths=[SCHEME, TESTS])
+    load_lisp(env, TESTS / "bench-view.scm")
+
+    for sh in range(7):
+        run(f"(set! *shake-px* {sh}.0)", env)
+        run("(draw-duel! *duel* *persona*)", env)
+
+    def per_draw(n, vary):
+        t0 = time.perf_counter()
+        for i in range(n):
+            if vary:
+                run(f"(set! *shake-px* {i % 7}.0)", env)
+            run("(draw-duel! *duel* *persona*)", env)
+        return (time.perf_counter() - t0) / n * 1000
+
+    stable = per_draw(7, vary=False)
+    cycled = per_draw(14, vary=True)
+    assert cycled < max(stable * 3, stable + 15), (
+        f"a shake frame costs {cycled:.0f} ms against {stable:.0f} ms "
+        "stable — the rect cache is evicting the other board's origin")

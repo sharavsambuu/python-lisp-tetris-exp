@@ -36,6 +36,7 @@
           b2b-attack-bonus
           journal-attack
           duel-exchange
+          duel-advance
           duel-step)
 
   (begin
@@ -159,12 +160,21 @@
                 ((phase-over? l1) (wrap-duel l1 r1 'right))
                 (else d1)))))
 
-    ;; One tick of the fight: both matches take `dt` of world time —
-    ;; gravity, the clock, the victory checks, each on its own track —
-    ;; then the exchange runs. The dt goes to both sides whole: the
-    ;; conductor calls this once a frame, and the symmetry is the point.
-    (define (duel-step d dt)
+    ;; One tick of the two worlds: both matches take `dt` of world time —
+    ;; gravity, the clock, the victory checks, each on its own track — but
+    ;; the exchange does NOT run here. The conductor needs to read the
+    ;; journals gravity just wrote (a natural lock, a clear) before the
+    ;; exchange drains them; `duel-step` composes the two for pure
+    ;; self-play, where no edge is listening.
+    ;;
+    ;; The dt goes to both sides whole: the conductor calls this once a
+    ;; frame, and the symmetry is the point.
+    (define (duel-advance d dt)
       (let ((l (result-unwrap-or (step-time (duel-left d) dt) (duel-left d)))
             (r (result-unwrap-or (step-time (duel-right d) dt) (duel-right d))))
-        (duel-exchange (duel-with-right (duel-with-left d l) r))))))
+        (duel-with-right (duel-with-left d l) r)))
+
+    ;; One full tick of the fight: advance, then exchange.
+    (define (duel-step d dt)
+      (duel-exchange (duel-advance d dt)))))
 

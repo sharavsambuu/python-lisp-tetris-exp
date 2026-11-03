@@ -95,15 +95,21 @@ The duel frame reads like the discipline it inherited:
                (duel-events (duel-left *duel*) evs)))  ; keys first
 (set! *duel* (duel-with-right *duel*
                (ai-step-match! ...)))                 ; the AI's step
+(set! *duel* (duel-advance *duel* dt))                 ; the world moves
 (duel-award! 'left ...) (duel-award! 'right ...)       ; facts award
-(set! *duel* (duel-step *duel* dt))                    ; the world moves
+(set! *duel* (duel-exchange *duel*))                   ; the net lands
 ```
 
-The awards run **before** the step, because the exchange drains both
-journals inside the pure value — the edge's last look at a fact is its
-only one. And the settle moved *out* of the live branch: a duel that
-sits decided at frame entry must still write its record, the same
-"settle once, whatever route" scar the solo loop earned chapters ago.
+Advance and exchange are deliberately two calls: gravity writes its own
+journal facts (a natural lock, a clear) during the advance, and the
+exchange drains both journals inside the pure value. The awards sit
+**between** them, so the edge sees every fact exactly once — a single
+`duel-step` would drain gravity's lock in the same call that made it, and
+the lock sound and the clear beam would never fire. Terminal facts are
+the exception: the settle owns that one sound. And the settle moved *out*
+of the live branch: a duel that sits decided at frame entry must still
+write its record, the same "settle once, whatever route" scar the solo
+loop earned chapters ago.
 
 ## 21.4 The ladder is the menu
 
@@ -130,6 +136,12 @@ with its own decision points (pause, forfeit, the result).
   places: the real host and four test stand-ins. The broadcast edit is
   the seam's toll — pay it in the same commit, or an unrelated suite
   dies at boot twenty minutes later.
+- **One call, two responsibilities.** `duel-step` advanced both worlds
+  and drained both journals in one pure reduction, so the edge's award
+  never saw the natural locks and clears the advance itself created.
+  When an observer needs the middle state, split the reduction (advance,
+  award, exchange); a composed convenience function is not the same as
+  an observable one.
 
 ✓ **Checkpoint.** You can measure a painter and let the number pick
 the layout, batch a hot path across a closed seam, drive two matches

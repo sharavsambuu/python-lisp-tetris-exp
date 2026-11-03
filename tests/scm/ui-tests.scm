@@ -57,10 +57,10 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris plan)
-        (tetris game)
+        (tetris game) (tetris duel) (tetris roster)
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
-        (tetris campaign))
+        (tetris campaign) (tetris locale))
 
 (tk-reset!)
 
@@ -215,6 +215,31 @@
                        (< (list-ref e 3) 20)
                        (< (list-ref e 1) 190)))
                 *host-log*))
+
+;; The batched board list is (x y w h r g b) per settled cell. The builder
+;; pushed x before y, so the final reverse handed the host (y x …): every
+;; settled cell painted at (row, column) instead of (column, row). A
+;; horizontal I read as a vertical one — the whole board turned ninety
+;; degrees. Pin one bottom-left cell's exact pixel, on both duel origins.
+(let* ((b (board-place (make-board) 'i '((0 . 19))))
+       (g (game-with (fresh-game seed: 1) board: b active: #f))
+       (cell (lay cell:))
+       (x (lay board-x:))
+       (y (+ (lay board-y:) (* 19 cell)))
+       (flat (build-board-rects! g x))
+       (rgb (piece-color 'i)))
+  (tk-check "a settled cell paints at its own column and row"
+            (list (list-ref flat 0) (list-ref flat 1))
+            (list x y))
+  (tk-check "the batch entry keeps the (x y w h r g b) order"
+            (list (list-ref flat 2) (list-ref flat 3)
+                  (list-ref flat 4) (list-ref flat 5) (list-ref flat 6))
+            (list (- cell 1) (- cell 1)
+                  (car rgb) (cadr rgb) (caddr rgb)))
+  (tk-check "the duel's settled cell keeps the right well's origin"
+            (list (list-ref (build-board-rects! g (lay duel-board-x:)) 0)
+                  (list-ref (build-board-rects! g (lay duel-board-x:)) 1))
+            (list (lay duel-board-x:) y)))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  an idle piece still falls                                             ;;
@@ -380,6 +405,69 @@
 (tk-check "escape pauses too" (phase) 'paused)
 (host-type! "escape")
 (tk-check "escape again leaves for the title" (screen) 'title)
+
+;; --------------------------------------------------------------------- ;;
+;;  the duel paints two wells, and its veil covers the whole wide window     ;;
+;; --------------------------------------------------------------------- ;;
+
+(tk-section "duel layout")
+
+(boot-fresh!)
+(start-duel! (persona-by-id 'wall))
+(tk-check "the duel re-opened the wide window" *host-window*
+          (list duel-window-width window-height))
+(set! *host-log* '())
+(draw-duel! *duel* *persona*)
+(tk-check "both wells show a next queue"
+          (length (filter (lambda (s) (string=? s "NEXT"))
+                          (host-text-strings)))
+          2)
+;; The keys panel is the solo table's first eight rows; in the duel the
+;; AI toggle is inert, so advertising it would lie. The fight gets its own
+;; row list (steering + pause), never the solo toggles.
+(tk-assert "the duel's hint does not advertise the solo AI toggle"
+           (not (any (lambda (s) (string-contains? s "AI"))
+                     (host-text-strings))))
+;; The duel is the tightest layout: the player's hint column ends where
+;; the opponent's well begins. Mongolian's longer labels must shrink into
+;; that column, never paint across the right board — the same fitting law
+;; the solo HUD obeys, with half the horizontal room.
+(set-locale! 'mn)
+(set! *host-log* '())
+(draw-duel! *duel* *persona*)
+(tk-assert "the mongolian duel's painter calls fit"
+           (every host-fits-window? *host-log*))
+(tk-assert "the duel hint stays out of the opponent's well"
+           (every (lambda (t)
+                    (let ((x (list-ref t 0)) (y (list-ref t 1))
+                          (s (list-ref t 2)) (size (list-ref t 3)))
+                      (or (< y 330)
+                          (< x (+ (lay right-x:) 8))
+                          (<= (+ x (text-width s size))
+                              (lay duel-board-x:)))))
+                  (host-texts)))
+(set-locale! 'en)
+(tk-assert "the duel's painter calls fit its wide window"
+           (every host-fits-window? *host-log*))
+;; The pause veil is the full window's, not the solo 640's — the opponent's
+;; half used to stay undimmed and the text centred over the left well. The
+;; key path is part of the test: a separate `*duel-paused*` flag that never
+;; touched the match's phase left the "PAUSED" arm dead.
+(host-tap! "p")
+(tk-assert "P pauses the duel" *duel-paused*)
+(set! *host-log* '())
+(set! *dirty* #t)
+(host-run-frames! 1)
+(tk-assert "the paused veil covers the whole duel window"
+           (any (lambda (e)
+                  (and (eq? (car e) 'rect)
+                       (= (list-ref e 1) 0) (= (list-ref e 2) 0)
+                       (= (list-ref e 3) duel-window-width)
+                       (= (list-ref e 4) window-height)))
+                *host-log*))
+(close-duel!)
+(tk-check "leaving the duel restores the window" *host-window*
+          (list window-width window-height))
 
 ;; --------------------------------------------------------------------- ;;
 ;;  the whole round trip, drawn                                              ;;

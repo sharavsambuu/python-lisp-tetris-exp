@@ -121,9 +121,10 @@
     ;; the edge scans BEFORE the step: each side's facts award on that
     ;; side's rail — its own beam, its own garbage meter, its own lock
     ;; counter (each side's AI reads its own), with one headline sound
-    ;; per side per frame. The garbage fact crosses sides: the receiver
-    ;; hears the warning and wears the meter; the sender hears the thud,
-    ;; because an attack must never feel swallowed. The flash and the
+    ;; per side per frame. The garbage fact lands in the receiver's
+    ;; journal: it hears the warning and wears the meter, and the thud
+    ;; that follows is the attack's acknowledgement — warning, then
+    ;; impact, so an attack never feels swallowed. The flash and the
     ;; shake answer the PLAYER's side only — one window, one veil.
 
     (define (duel-award! side events)

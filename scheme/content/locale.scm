@@ -62,11 +62,11 @@
         (menu-best             "best"                            "дээд амжилт")
         (menu-level-n          "Level ~a"                        "Түвшин ~a")
         (menu-done-mark        " [x]"                            " [x]")
-        (menu-versus           "Versus"                          "Өрсөлдөөт")
+        (menu-versus           "Versus AI"                       "AI-тай өрсөлдөх")
         (menu-locked           "  [locked]"                      "  [түгжсэн]")
 
         ;; -- the versus screen ----------------------------------------
-        (title-versus          "CHOOSE YOUR OPPONENT"            "ӨРСӨГӨӨ СОНГОНО УУ")
+        (title-versus          "CHOOSE YOUR OPPONENT"            "ӨРСӨЛДӨГЧӨӨ СОНГОНО УУ")
         (hint-versus           "RETURN: FIGHT   ESC: BACK"       "RETURN: ТУЛАН   ESC: БУЦАХ")
 
         ;; -- the ways to play (display names; keys stay English) ------

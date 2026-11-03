@@ -115,6 +115,7 @@
           (set! *settled* #f)
           (set! *screen* 'play)
           (set! *director-last* 0)   ; the cooldown restarts with the match
+          (set! *lock-count* 0)      ; the AI's piece key is per match
           (reset-ai!)
           (view-reset!)
           (sfx! "start"))))
@@ -207,6 +208,7 @@
                       (fresh-game seed: (new-seed)
                                   mode: 'marathon options: '())))
         (set! *r-lock-count* 0)
+        (set! *lock-count* 0)
         (let* ((id (symbol->string (persona-id persona)))
                ;; The profile can be absent (a boot that refused every
                ;; document): a missing memory defaults the shelf, it
@@ -232,6 +234,7 @@
     (define (close-duel!)
       (set! *duel* #f)
       (set! *persona* #f)
+      (set! *duel-paused* #f)   ; a forfeit leaves the flag set otherwise
       (set! *leash* #f)
       (set! *r-throttle* 1)
       (set! *r-pace* 1)
@@ -239,7 +242,13 @@
       (show-screen! 'title (title-menu)))
 
     ;; The player's keys, minus the ones the duel answers itself (the
-    ;; pause, the quit): everything else is the left match's steering.
+    ;; pause, the quit) and the solo-only controls: the AI toggle
+    ;; (`a`) resets the shared search state the persona is using, the
+    ;; pacing director (`d`) belongs to free play, and restart (`r`)
+    ;; would clear only the player's half while the opponent keeps
+    ;; playing — and leave the leash's clock ahead of the fresh match,
+    ;; so the duel director stops correcting. In the duel these keys
+    ;; are inert; the steering keys are everything else.
     (define (duel-events st evs)
       (apply-events st
                     (srfi-1:filter
@@ -250,13 +259,22 @@
                            ((key-down)
                             (let ((k (cadr (assq key: ev))))
                               (not (or (string=? k "escape")
-                                       (string=? k "p")))))
+                                       (string=? k "p")
+                                       (string=? k "a")
+                                       (string=? k "d")
+                                       (string=? k "r")))))
                            (else #t))))
                      evs)))
 
     (define (duel-key! key)
       (cond ((and (not (duel-over? *duel*)) *duel-paused*)
              (cond ((string=? key "p")
+                    ;; The painter reads the LEFT match's phase for its
+                    ;; veil; the two pause flags move together or the
+                    ;; paused duel paints as if it were still live.
+                    (set! *duel*
+                          (duel-with-left *duel*
+                            (game-with (duel-left *duel*) phase: (playing))))
                     (set! *duel-paused* #f)
                     (set! *dirty* #t)
                     (sfx! "pause"))
@@ -274,12 +292,20 @@
                    (else #f)))
             ((duel-over? *duel*)
              (cond ((or (string=? key "return") (string=? key "escape"))
+                    ;; The result is final: a scripted or forced terminal
+                    ;; state may reach frame entry before the frame's settle
+                    ;; has run. Settle before the state disappears, or the
+                    ;; record is lost on the way out.
+                    (if *settled* #f (settle-duel!))
                     (close-duel!)
                     (sfx! "menu-select"))
                    ((string=? key "q") (quit!))
                    (else #f)))
             (else
              (cond ((or (string=? key "escape") (string=? key "p"))
+                    (set! *duel*
+                          (duel-with-left *duel*
+                            (game-with (duel-left *duel*) phase: (paused))))
                     (set! *duel-paused* #t)
                     (set! *dirty* #t)
                     (sfx! "pause"))
@@ -375,71 +401,100 @@
                 #f))
           #f))
 
+    ;; The result fact belongs to the settle: it plays the duel's one
+    ;; game-over/victory sound. Awarding the same fact on the per-side rail
+    ;; would speak it twice. Everything else — a command, a lock gravity
+    ;; produced, a clear — is the rail's.
+    (define (duel-awardable? ev)
+      (variant-match ev
+        ((game-over) #f)
+        ((victory) #f)
+        (else #t)))
+
     (define (duel-frame)
       (let* ((dt (tick!))
              (evs (poll-events!)))
         (view-fx-step! dt (duel-left *duel*))
+        ;; Keys can LEAVE the fight (the result's RETURN/ESC, a pause's
+        ;; forfeit), and `close-duel!` answers no duel at all. A poll may
+        ;; carry several events, so the loop stops the moment the screen
+        ;; changes — touching `*duel*` after that is the crash.
         (let loop ((rest evs))
-          (if (null? rest)
+          (if (or (null? rest) (not (eq? *screen* 'duel)))
               #f
-              (let ((type (cadr (assq type: (car rest)))))
-                (case type
-                  ((quit) (quit!))
-                  ((key-down)
-                   (duel-key! (cadr (assq key: (car rest)))))
-                  (else #f))
+              (begin
+                (let ((type (cadr (assq type: (car rest)))))
+                  (case type
+                    ((quit) (quit!))
+                    ((key-down)
+                     (duel-key! (cadr (assq key: (car rest)))))
+                    (else #f)))
                 (loop (cdr rest)))))
-        (if (and (not *duel-paused*) (not (duel-over? *duel*)))
+        (if (not (eq? *screen* 'duel))
+            #f
             (begin
-              ;; The player's keys land before this frame's gravity; the
-              ;; leash reads the gap and maybe re-budgets the AI; the
-              ;; persona's AI takes its one step at the throttled budget;
-              ;; then the world moves — both sides, whole dt, one
-              ;; exchange, the AI's gravity carrying its handicap.
-              (duel-direct!)
-              (set! *duel*
-                    (duel-with-left *duel*
-                      (duel-events (duel-left *duel*) evs)))
-              (if (phase-playing? (duel-right *duel*))
-                  (set! *duel*
-                        (duel-with-right *duel*
-                          (ai-step-match! (duel-right *duel*)
-                                          (persona-weights *persona*)
-                                          (max 1
-                                               (* (persona-speed *persona*)
-                                                  *r-throttle*))
-                                          *r-lock-count*)))
+              (if (and (not *duel-paused*) (not (duel-over? *duel*)))
+                  (begin
+                    ;; The player's keys land before this frame's gravity;
+                    ;; the leash reads the gap and maybe re-budgets the AI;
+                    ;; the persona's AI takes its one step at the throttled
+                    ;; budget; then the world moves — both sides, whole dt,
+                    ;; the AI's gravity carrying its handicap.
+                    (duel-direct!)
+                    (set! *duel*
+                          (duel-with-left *duel*
+                            (duel-events (duel-left *duel*) evs)))
+                    (if (phase-playing? (duel-right *duel*))
+                        (set! *duel*
+                              (duel-with-right *duel*
+                                (ai-step-match! (duel-right *duel*)
+                                                (persona-weights *persona*)
+                                                (max 1
+                                                     (* (persona-speed *persona*)
+                                                        *r-throttle*))
+                                                *r-lock-count*)))
+                        #f)
+                    (set! *duel*
+                          (duel-with-right *duel*
+                            (game-with (duel-right *duel*) pace: *r-pace*)))
+                    ;; Advance and exchange are separate calls on purpose:
+                    ;; the edge reads both journals AFTER gravity has
+                    ;; written this frame's locks and clears, but BEFORE
+                    ;; the exchange drains them. A natural lock used to be
+                    ;; drained in the same call that produced it, so it
+                    ;; never reached the sound and beam rails.
+                    (set! *duel* (duel-advance *duel* dt))
+                    (duel-award! 'left
+                                 (srfi-1:filter
+                                  duel-awardable?
+                                  (reverse (game-journal (duel-left *duel*)))))
+                    (duel-award! 'right
+                                 (srfi-1:filter
+                                  duel-awardable?
+                                  (reverse (game-journal (duel-right *duel*)))))
+                    (set! *duel* (duel-exchange *duel*)))
                   #f)
-              (set! *duel*
-                    (duel-with-right *duel*
-                      (game-with (duel-right *duel*) pace: *r-pace*)))
-              ;; The edge reads the journals BEFORE the exchange drains
-              ;; them: each fact awards once, on the side that earned it.
-              (duel-award! 'left (reverse (game-journal (duel-left *duel*))))
-              (duel-award! 'right (reverse (game-journal (duel-right *duel*))))
-              (set! *duel* (duel-step *duel* dt)))
-            #f)
-        ;; Settle once, whatever route the terminal state arrived by: it
-        ;; can land inside the frame above, or already sit decided at
-        ;; frame entry — a route that must not skip the record.
-        (if (and (duel-over? *duel*) (not *settled*))
-            (settle-duel!)
-            #f)
-        (if (or *dirty*
-                ;; The world moved: a live duel repaints every frame —
-                ;; the right well falls and steers whether or not the
-                ;; player's side is animating, and a repaint gate that
-                ;; only watched the LEFT side's effects froze the
-                ;; opponent's board on screen between the player's own
-                ;; events. Cached boards make the frame cheap; the
-                ;; gate's job is only to spare the paused and decided
-                ;; screens.
-                (and (not *duel-paused*) (not (duel-over? *duel*)))
-                (view-busy? (duel-left *duel*)))
-            (begin
-              (draw-duel! *duel* *persona*)
-              (set! *dirty* #f))
-            #f)))
+              ;; Settle once, whatever route the terminal state arrived by:
+              ;; it can land inside the frame above, or already sit decided
+              ;; at frame entry — a route that must not skip the record.
+              (if (and (duel-over? *duel*) (not *settled*))
+                  (settle-duel!)
+                  #f)
+              (if (or *dirty*
+                      ;; The world moved: a live duel repaints every frame —
+                      ;; the right well falls and steers whether or not the
+                      ;; player's side is animating, and a repaint gate that
+                      ;; only watched the LEFT side's effects froze the
+                      ;; opponent's board on screen between the player's own
+                      ;; events. Cached boards make the frame cheap; the
+                      ;; gate's job is only to spare the paused and decided
+                      ;; screens.
+                      (and (not *duel-paused*) (not (duel-over? *duel*)))
+                      (view-busy? (duel-left *duel*)))
+                  (begin
+                    (draw-duel! *duel* *persona*)
+                    (set! *dirty* #f))
+                  #f)))))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The AI — plan (frame-budgeted), then steer one step                ;;
@@ -457,6 +512,7 @@
     (define *best-per-frame* 6)  ;; placements scored per call
 
     (define *search-key* #f)     ;; piece key (lock count + kind) the search opened for
+    (define *search-board* #f)   ;; the board identity the cache was read from
     (define *search-i* 40)       ;; next placement index to score (40 = settled)
     (define *search-bx* 3)
     (define *search-brot* 0)
@@ -467,29 +523,41 @@
 
     (define (reset-ai!)
       (set! *search-key* #f)
+      (set! *search-board* #f)
       (set! *search-i* 40)
       (set! *search-bx* 3)
       (set! *search-brot* 0)
       (set! *search-best* -1000000000)
       (set! *search-hts* #f)
       (set! *search-rows* 20)
-      (set! *search-shapes* #f))
+      (set! *search-shapes* #f)
+      ;; The plan belongs to the piece it was made for. A toggle or a new
+      ;; match must not inherit the last board's answer.
+      (set! *plan-key* #f)
+      (set! *plan-board* #f)
+      (set! *plan-ready* #f)
+      (set! *plan-x* 3)
+      (set! *plan-rot* 0))
 
     (define (best-placement st ws budget locks)
       (let ((key (list locks
                        (if (game-active st) (falling-name (game-active st)) #f))))
-        (when (not (equal? key *search-key*))
+        (when (or (not (equal? key *search-key*))
+                  (not (eq? (game-board st) *search-board*)))
           (set! *search-i* 0)
           (set! *search-bx* 3)
           (set! *search-brot* 0)
           (set! *search-best* -1000000000)
           ;; The settled board and the shapes are fixed for this piece's
-          ;; whole life — read them once, not four times a frame.
+          ;; whole life — read them once, not four times a frame. Garbage
+          ;; can move the board under an airborne piece, so the board's
+          ;; identity is part of the key: a new board re-reads the columns.
           (set! *search-hts* (column-heights (game-board st)))
           (set! *search-rows* matrix-height)
           (set! *search-shapes*
                 (map (lambda (rot) (piece-cells (falling-name (game-active st)) rot))
                      (list 0 1 2 3)))
+          (set! *search-board* (game-board st))
           (set! *search-key* key))
         (let loop ((scored 0) (i *search-i*))
           (cond ((>= i 40)
@@ -517,6 +585,7 @@
 
     ;; Plan state, then steering: one plan per piece, one command a frame.
     (define *plan-key* #f)
+    (define *plan-board* #f)  ;; the board the ready plan was made for
     (define *plan-ready* #f)
     (define *plan-x* 3)
     (define *plan-rot* 0)
@@ -549,8 +618,10 @@
     (define (ai-step-match! st ws budget locks)
       (let ((key (list locks
                        (if (game-active st) (falling-name (game-active st)) #f))))
-        (when (not (equal? key *plan-key*))
+        (when (or (not (equal? key *plan-key*))
+                  (not (eq? (game-board st) *plan-board*)))
           (set! *plan-key* key)
+          (set! *plan-board* (game-board st))
           (set! *plan-ready* #f))
         (when (not *plan-ready*)
           (let ((plan (best-placement st ws budget locks)))

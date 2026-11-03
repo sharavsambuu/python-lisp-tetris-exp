@@ -35,7 +35,9 @@
             (cons left-x: 24)
             (cons right-x: 476)
             (cons panel-w: 140)
-            (cons duel-board-x: 610)
+            ;; The duel's right well starts clear of the player's NEXT
+            ;; panel (476 + 140 = 616): the frame's 2px lip begins at 622.
+            (cons duel-board-x: 624)
             (cons duel-panel-x: 896)))
 
     ;; `lay` and `color` are assq walks over constant tables — and they
@@ -404,6 +406,14 @@
     ;; and the shake, which change the pixels without changing the
     ;; board. A hit is one host crossing; a miss is the rebuild, and
     ;; misses are the game's events, not the frames.
+    ;;
+    ;; The capacity has to hold BOTH duel origins at every shake offset
+    ;; the decay can round to (0..6): 14 entries. It held five once, and
+    ;; a duel during a slam thrashed — adding the left board's new offset
+    ;; evicted the right board's, so every frame of the shake rebuilt
+    ;; both full boards (~53ms measured). Capacity is the geometry of the
+    ;; key, not a round number.
+    (define *board-rects-cache-cap* 16)
     (define *board-rects-cache* '())
 
     (define (build-board-rects! st ox)
@@ -418,12 +428,16 @@
                      (rgb (piece-color (cdr e)))
                      (x (+ ox (* (car pos) cell) (shake-offset)))
                      (y (+ oy (* (cdr pos) cell))))
-                ;; The flat entry, pushed in reverse: (x y w h r g b).
+                ;; Push each entry BACKWARDS — (b g r h w y x) — so the
+                ;; final `reverse` restores both the cell order and the
+                ;; field order to (x y w h r g b). Pushing x before y here
+                ;; transposed every settled cell: a horizontal I painted as
+                ;; a vertical one, the whole board rotated ninety degrees.
                 (loop (cdr entries)
                       (cons (caddr rgb)
                             (cons (cadr rgb)
                                   (cons (car rgb)
-                                        (cons s (cons s (cons x (cons y acc)))))))))))))
+                                        (cons s (cons s (cons y (cons x acc)))))))))))))
 
     (define (board-rects! st ox)
       (let ((b (game-board st)) (sh (shake-offset)))
@@ -432,7 +446,8 @@
                  (let ((flat (build-board-rects! st ox)))
                    (set! *board-rects-cache*
                          (cons (list b ox sh flat)
-                               (if (> (length *board-rects-cache*) 4)
+                               (if (>= (length *board-rects-cache*)
+                                       *board-rects-cache-cap*)
                                    (cdr *board-rects-cache*)
                                    *board-rects-cache*)))
                    flat))
@@ -626,13 +641,35 @@
                               (- window-width rx 8))
               #f))))
 
-    (define (draw-hint! st)
+    ;; The duel's keys: the match controls the player actually owns there.
+    ;; The solo-only rows (the AI and pacing-director toggles, restart) are
+    ;; inert during a fight, so advertising them would lie — the same reason
+    ;; the event filter drops them before they reach the left match.
+    (define duel-command->key
+      '(("left/right" "move")
+        ("down" "soft drop")
+        ("up / x" "rotate cw")
+        ("z" "rotate ccw")
+        ("space" "hard drop")
+        ("shift / c" "hold")
+        ("g" "ghost on/off")
+        ("p" "pause")))
+
+    (define (draw-hint! st . maybe-rows)
       ;; The keys, as data — the first eight rows fit the panel; the well
       ;; covers the rest on the menus, where the overlays say it all. The
       ;; labels translate at display time (key-label-key); the key column
-      ;; stays the host's key names in every locale.
+      ;; stays the host's key names in every locale. The duel passes its
+      ;; own row list (`duel-command->key`) so the panel never advertises a
+      ;; control the fight ignores — and its own width: the player's panel
+      ;; ends where the opponent's well begins, so a long Mongolian label
+      ;; must shrink, not paint across the right board.
       (let ((x (+ (lay right-x:) 8))
-            (rows (take command->key 8)))
+            (duel-rows? (not (null? maybe-rows)))
+            (rows (take (if (null? maybe-rows)
+                            command->key
+                            (car maybe-rows))
+                        8)))
         (draw-text! x 330 (tr 'hud-keys) 16 (color dim:))
         (let loop ((ls rows) (i 0))
           (if (null? ls)
@@ -646,34 +683,43 @@
                                                       (car (cdr (car ls)))))
                                 16
                                 (color dim:)
-                                (- window-width x 8))
+                                (if duel-rows?
+                                    (- (lay duel-board-x:) x 8)
+                                    (- window-width x 8)))
                 (loop (cdr ls) (+ i 1)))))))
 
-    (define (draw-overlay! lines)
+    (define (draw-overlay-sized! width height lines)
       ;; The veil covers the whole window and every line centres in the
       ;; FULL width — a hint line is wider than the well, and centring in
       ;; the well alone would push it into the panels. The line height is
       ;; the type size plus breathing room, so a tall title and a small
       ;; hint each take the space their own type asks for.
-      (draw-rect! 0 0 window-width window-height '(10 10 16))
+      (draw-rect! 0 0 width height '(10 10 16))
       (let ((total (let sum ((ls lines) (h 0))
                      (if (null? ls)
                          h
                          (sum (cdr ls)
                               (+ h (car (cdr (car ls))) 14)))))
-            (width window-width))
+            (w width))
         (let loop ((ls lines)
-                   (y (max 24 (quotient (- window-height total) 2))))
+                   (y (max 24 (quotient (- height total) 2))))
           (if (null? ls)
               #f
               (let* ((spec (car ls))
                      (s (car spec))
                      (size (car (cdr spec)))
-                     (x (centered-x 0 width s size)))
+                     (x (centered-x 0 w s size)))
                 (if (> (string-length s) 0)
-                    (draw-text-fit! x y s size (color text:) (- width 16))
+                    (draw-text-fit! x y s size (color text:) (- w 16))
                     #f)
                 (loop (cdr ls) (+ y size 14)))))))
+
+    ;; The solo screens keep the 640px window's shape. The duel passes its
+    ;; own width: the window is 1088 there, and a veil that stopped at 640
+    ;; left the opponent's half undimmed and the text centred over the
+    ;; player's well alone.
+    (define (draw-overlay! lines)
+      (draw-overlay-sized! window-width window-height lines))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The whole picture, per phase                                     ;;
@@ -837,28 +883,35 @@
                                  (piece-color (car names)))
                   (loop (cdr names) (+ i 1))))))
         ;; The name plate: who you are fighting, and their line count —
-        ;; the one number a duel reads at a glance.
+        ;; the one number a duel reads at a glance. The count lives in
+        ;; the NEXT panel under the previews, not at the well's origin:
+        ;; painted there it landed INSIDE the opponent's board and the
+        ;; falling cells drew over it.
         (draw-text-fit! ox 26
                         (persona-name persona)
                         22 (color accent:)
                         (- duel-window-width ox 8))
-        (draw-text-fit! ox 268
+        (draw-text-fit! px 212
                         (tr-fmt 'hud-lines (game-lines st))
                         18 (color dim:)
-                        (- duel-window-width ox 8))
+                        (- duel-window-width px 8))
         (draw-playing-field! st ox 'right)))
 
     (define (draw-duel! duel persona)
       (clear-screen! (color bg:))
       (let ((l (duel-left duel)))
+        ;; The player's side is the whole solo picture: HOLD and NEXT both
+        ;; tell them what the opponent's AI already knows.
         (draw-hold! l)
+        (draw-next! l)
         (draw-stats! l)
-        (draw-hint! l)
+        (draw-hint! l duel-command->key)
         (draw-playing-field! l (lay board-x:) 'left))
       (draw-opponent! (duel-right duel) persona)
       (variant-match (game-phase (duel-left duel))
         ((paused)
-         (draw-overlay!
+         (draw-overlay-sized!
+          duel-window-width window-height
           (list (list (tr 'overlay-paused) 34)
                 (list (tr 'overlay-p-resume) 20)
                 (list (tr 'overlay-esc-forfeit) 20))))
@@ -869,7 +922,8 @@
                                   (tr 'overlay-duel-won)
                                   (tr-fmt 'overlay-duel-lost
                                           (persona-name persona)))))
-               (draw-overlay!
+               (draw-overlay-sized!
+                duel-window-width window-height
                 (append (list (list headline 34)
                               (list (tr-fmt 'overlay-score
                                             (game-score (duel-left duel)))

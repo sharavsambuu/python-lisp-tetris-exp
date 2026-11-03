@@ -131,9 +131,13 @@ way to die; it *reads* the death the match already announces. And a
 decided duel stays decided however often the exchange reruns — idempotent
 by construction, the way a pure reduction should be.
 
-`duel-step` is the conductor's whole contract with the fight: give both
-sides `dt` of world time, then exchange. The `dt` goes to both sides
-whole — the symmetry is the point, and the conductor never arbitrates.
+The tick is two pure steps: `duel-advance` gives both sides `dt` of world
+time, and `duel-exchange` settles the net. The conductor keeps them apart
+so the edge can award the journal facts gravity just wrote — a natural
+lock, a clear — before the exchange drains them (chapter 21); `duel-step`
+composes the two for pure self-play, where no edge is listening. The `dt`
+goes to both sides whole — the symmetry is the point, and the conductor
+never arbitrates.
 
 ## 18.5 The test with nothing to mock
 

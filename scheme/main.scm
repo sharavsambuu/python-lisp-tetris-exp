@@ -22,6 +22,7 @@
 (load "rules/pipeline")
 
 (load "content/campaign")
+(load "content/locale")
 
 (load "presentation/view")
 (load "conductor/arcade")

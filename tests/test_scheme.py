@@ -83,7 +83,7 @@ def test_domain_modules_are_pure_r7rs_libraries():
         "domain/modes.scm", "domain/game.scm", "domain/plan.scm",
         "rules/commands.scm", "rules/kicks.scm",
         "rules/scoring.scm", "policies/gravity.scm", "rules/pipeline.scm",
-        "core/rop.scm", "content/campaign.scm",
+        "core/rop.scm", "content/campaign.scm", "content/locale.scm",
     ]
     for rel in pure:
         text = (SCHEME / rel).read_text()

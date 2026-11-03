@@ -40,7 +40,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
-        (tetris plan) (tetris campaign)
+        (tetris plan) (tetris campaign) (tetris locale)
         (tetris commands) (tetris gravity) (tetris rules))
   (begin
     ;; ---------------------------------------------------------------- ;;
@@ -452,21 +452,49 @@
     ;;  The screens                                                        ;;
     ;; ---------------------------------------------------------------- ;;
 
-    ;; The title: the campaigns, free play, and the door out. The label
-    ;; decoration is a level count, read from the content.
+    ;; Content translates at the edge by its id: the campaign/challenge
+    ;; libraries stay locale-blind, and the locale map owns the spellings.
+    ;; `tr-or` answers the content's own string until a translation lands.
+    (define (campaign-title-tr c)
+      (tr-or (string->symbol (string-append "campaign-"
+                                            (campaign-id c)))
+             (campaign-title c)))
+    (define (challenge-title-tr ch)
+      (tr-or (string->symbol (string-append "challenge-"
+                                            (challenge-id ch)))
+             (challenge-title ch)))
+    (define (challenge-goal-tr ch)
+      (tr-or (string->symbol (string-append "goal-"
+                                            (challenge-id ch)))
+             (challenge-goal ch)))
+    ;; A mode *symbol* ("free play picked sprint") in the locale's spelling.
+    (define (mode-name-tr m)
+      (tr-or (string->symbol (string-append "mode-" (symbol->string m)))
+             (symbol->string m)))
+
+    ;; The title: the campaigns, free play, the language setting, and the
+    ;; door out. The label decoration is a level count, read from the
+    ;; content; the language row's label re-reads the live locale, so the
+    ;; menu itself speaks the language it is about to switch to.
     (define (title-menu)
       (make-menu
        (append
         (map (lambda (c)
-               (list (string-append (campaign-title c)
+               (list (string-append (campaign-title-tr c)
                                     "  ("
                                     (number->string
                                      (length (campaign-levels c)))
-                                    " levels)")
+                                    " "
+                                    (tr 'menu-levels-word)
+                                    ")")
                      (cons 'campaign c)))
              (campaigns))
-        (list (list "Free play" '(free-play))
-              (list "Quit" '(quit))))))
+        (list (list (tr 'menu-free-play) '(free-play))
+              (list (string-append (tr 'menu-language)
+                                   ": "
+                                   (locale-label (current-locale)))
+                    '(language))
+              (list (tr 'menu-quit) '(quit))))))
 
     ;; The campaign ladder: each rung shows its title, and a checkmark when
     ;; this session has already won it.
@@ -475,30 +503,37 @@
        (map (lambda (ch i)
               (let ((key (level-key (campaign-id camp) i)))
                 (list (string-append (number->string i) ". "
-                                     (challenge-title ch)
-                                     (if (level-done? *done* key) " [x]" ""))
+                                     (challenge-title-tr ch)
+                                     (if (level-done? *done* key)
+                                         (tr 'menu-done-mark)
+                                         ""))
                       (cons 'challenge ch))))
             (campaign-levels camp)
             (iota (length (campaign-levels camp)) 1))))
 
-    ;; Free play: the four ways to play, one canonical spelling each, with
-    ;; the session's best beside the one that has one. The values are the
-    ;; mode *symbols* the domain's config-from spells.
+    ;; Free play: the four ways to play, in the locale's spelling, with the
+    ;; session's best beside the one that has one. The values are the mode
+    ;; *symbols* the domain's config-from spells; the BESTS TABLE stays
+    ;; keyed by the domain's English label, so a locale switch cannot
+    ;; orphan a score.
     (define (mode-menu)
       (make-menu
        (map (lambda (m)
               (let ((best (best-for *bests* (symbol->string m))))
                 (list (if (> best 0)
-                          (string-append (symbol->string m)
-                                         "  best " (number->string best))
-                          (symbol->string m))
+                          (string-append (mode-name-tr m)
+                                         "  "
+                                         (tr 'menu-best)
+                                         " "
+                                         (number->string best))
+                          (mode-name-tr m))
                       (cons 'mode m))))
             (mode-names))))
 
     ;; The level picker: one entry, moved with the arrows — the *value* is
     ;; the number itself, so the label and the truth cannot drift apart.
     (define (level-menu)
-      (make-menu (list (list (string-append "Level " (number->string *level*))
+      (make-menu (list (list (tr-fmt 'menu-level-n *level*)
                              (cons 'level *level*)))))
 
     (define (show-screen! screen menu)
@@ -517,18 +552,22 @@
     (define (screen-overlay)
       (case *screen*
         ((title)
-         (menu-overlay *menu* "SCHEME TETRIS" "UP/DOWN MOVE   RETURN PICK   Q QUIT"))
+         (menu-overlay *menu* "SCHEME TETRIS" (tr 'hint-title)))
         ((campaign)
          (menu-overlay *menu*
-                       (campaign-title *campaign*)
-                       (string-append (challenge-goal (cdr (menu-selected *menu*)))
-                                      "   ESC: BACK")))
+                       (campaign-title-tr *campaign*)
+                       (string-append (challenge-goal-tr
+                                       (cdr (menu-selected *menu*)))
+                                      "   "
+                                      (tr 'hint-esc-back))))
         ((mode)
-         (menu-overlay *menu* "FREE PLAY — SELECT MODE" "RETURN: CHOOSE   ESC: BACK"))
+         (menu-overlay *menu* (tr 'title-free-play) (tr 'hint-mode)))
         ((level)
          (menu-overlay *menu*
-                       (string-append "STARTING LEVEL — " (symbol->string *mode*))
-                       "LEFT/RIGHT: STEP   UP/DOWN: SKIP 5   RETURN: PLAY"))
+                       (string-append (tr 'title-starting-level)
+                                      " — "
+                                      (mode-name-tr *mode*))
+                       (tr 'hint-level)))
         (else '())))
 
     (define (draw-screen!)
@@ -583,6 +622,17 @@
                            (level-key (campaign-id *campaign*) (+ idx 1))
                            (+ idx 1))))
           ((free-play) (show-screen! 'mode (mode-menu)) (sfx! "menu-select"))
+          ((language)
+           ;; The setting IS the entry: RETURN cycles the locale, the menu
+           ;; rebuilds (its labels are now in the new locale), and the
+           ;; cursor stays on the language row so a second RETURN cycles
+           ;; back. `menu-set` clamps, so the rebuild cannot walk the
+           ;; cursor off the end.
+           (cycle-locale!)
+           (set! *menu* (menu-set (make-menu (menu-entries (title-menu)))
+                                  (menu-cursor *menu*)))
+           (sfx! "menu-move")
+           (set! *dirty* #t))
           ((mode)
            (set! *mode* (cdr sel))
            (show-screen! 'level (level-menu))
@@ -923,10 +973,11 @@
               (loop))))))
 
     ;; The host's boot config — the CLI as an alist: `((mode . "sprint")
-    ;; (level . 5) (seed . 7) (ai . #t) (autostart . #t))`. A mode on the
-    ;; command line starts a free-play match straight away; a bare autostart
-    ;; boots into the classic marathon. `boot-config` is a host primitive
-    ;; the smoke tests drive.
+    ;; (level . 5) (seed . 7) (ai . #t) (autostart . #t) (locale . "mn"))`.
+    ;; A mode on the command line starts a free-play match straight away; a
+    ;; bare autostart boots into the classic marathon; a locale starts the
+    ;; session in that language (the menu setting can change it after).
+    ;; `boot-config` is a host primitive the smoke tests drive.
     (define (boot!)
       (let ((cfg (boot-config)))
         (define (opt k) (let ((e (assq k cfg))) (if e (cdr e) #f)))
@@ -934,9 +985,11 @@
               (mode (opt 'mode))
               (level (opt 'level))
               (ai (opt 'ai))
-              (autostart (opt 'autostart)))
+              (autostart (opt 'autostart))
+              (locale (opt 'locale)))
           (if seed (set! *seed* seed) #f)
           (if ai (set! *ai* #t) #f)
+          (if locale (set-locale! (string->symbol locale)) #f)
           (cond ((and autostart mode)
                  (set! *mode* (string->symbol mode))
                  (set! *level* (or level 1))

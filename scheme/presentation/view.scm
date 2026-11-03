@@ -21,7 +21,7 @@
         (srfi 26)
         (srfi 88)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
-        (tetris rules) (tetris commands))
+        (tetris rules) (tetris commands) (tetris locale))
   (begin
     ;; ---------------------------------------------------------------- ;;
     ;;  Layout and palette                                               ;;
@@ -62,6 +62,25 @@
 
     (define (piece-color name)
       (color (string->keyword (symbol->string name))))
+
+    ;; The mode's display name: the domain's label is the stable *key* (the
+    ;; bests table is keyed by it), the locale map owns the spelling shown.
+    (define (mode-title label)
+      (tr-or (string->symbol (string-append "mode-" label)) label))
+
+    ;; The keys panel translates by the English label it already has: the
+    ;; table in commands.scm is a *rules* library and cannot know locales,
+    ;; so the painter keys the translation off the label — "soft drop"
+    ;; becomes the symbol `key-soft-drop`. Run once per repaint, not per
+    ;; key: a two-fold over an eight-row list is noise, but it does not
+    ;; belong in the inner loop either.
+    (define (key-label-key label)
+      (string->symbol
+       (string-append
+        "key-"
+        (list->string
+         (map (lambda (ch) (if (char=? ch #\space) #\- ch))
+              (string->list label))))))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The effects rail — flash and shake, fed by the conductor           ;;
@@ -341,15 +360,15 @@
     (define (draw-stats! st)
       (let ((x (lay left-x:))
             (cfg (game-config st)))
-        (draw-text! x 268 (mode-label cfg) 18 (color accent:))
-        (draw-text! x 300 "SCORE" 18 (color dim:))
+        (draw-text! x 268 (mode-title (mode-label cfg)) 18 (color accent:))
+        (draw-text! x 300 (tr 'hud-score) 18 (color dim:))
         ;; The ticker's value, not the record's — a big clear rolls up
         ;; instead of snapping, and the busy flag keeps frames coming
         ;; until it lands.
         (draw-text! x 324 (number->string *score-shown*) 28 (color text:))
-        (draw-text! x 372 "LINES" 18 (color dim:))
+        (draw-text! x 372 (tr 'hud-lines) 18 (color dim:))
         (draw-text! x 396 (number->string (game-lines st)) 28 (color text:))
-        (draw-text! x 444 "LEVEL" 18 (color dim:))
+        (draw-text! x 444 (tr 'hud-level) 18 (color dim:))
         (draw-text! x 468 (number->string (game-level st)) 28 (color text:))
         ;; The mode's own gauge: each way to play shows the number it is
         ;; played against — the ultra's countdown, the sprint's target, the
@@ -357,40 +376,40 @@
         (variant-match (config-mode cfg)
           ((ultra)
            (draw-text! x 530
-                       (string-append "TIME "
-                                      (number->string
-                                       (time-remaining (game-clock st) cfg)))
+                       (tr-fmt 'hud-time
+                               (time-remaining (game-clock st) cfg))
                        22 (color warn:)))
           ((sprint)
            (draw-text! x 530
-                       (string-append "TARGET "
-                                      (number->string (game-lines st))
-                                      "/"
-                                      (number->string (config-target-lines cfg)))
+                       (tr-fmt 'hud-target
+                               (game-lines st)
+                               (config-target-lines cfg))
                        22 (color accent:)))
           ((cheese)
            (draw-text! x 530
-                       (string-append "GARBAGE "
-                                      (number->string (garbage-count (game-board st))))
+                       (tr-fmt 'hud-garbage
+                               (garbage-count (game-board st)))
                        22 (color warn:)))
           (else #f))
         ;; The scoring chain, while it runs — under the NEXT panel.
         (let ((rx (+ (lay right-x:) 8)))
           (if (> (game-combo st) 0)
               (draw-text! rx 268
-                          (string-append "COMBO x" (number->string (game-combo st)))
+                          (tr-fmt 'hud-combo (game-combo st))
                           20 (color accent:))
               #f)
           (if (game-b2b st)
-              (draw-text! rx 296 "BACK-TO-BACK" 18 (color warn:))
+              (draw-text! rx 296 (tr 'hud-b2b) 18 (color warn:))
               #f))))
 
     (define (draw-hint! st)
       ;; The keys, as data — the first eight rows fit the panel; the well
-      ;; covers the rest on the menus, where the overlays say it all.
+      ;; covers the rest on the menus, where the overlays say it all. The
+      ;; labels translate at display time (key-label-key); the key column
+      ;; stays the host's key names in every locale.
       (let ((x (+ (lay right-x:) 8))
             (rows (take command->key 8)))
-        (draw-text! x 330 "KEYS" 16 (color dim:))
+        (draw-text! x 330 (tr 'hud-keys) 16 (color dim:))
         (let loop ((ls rows) (i 0))
           (if (null? ls)
               #f
@@ -398,7 +417,9 @@
                 (draw-text! x (+ 356 (* i 24))
                             (string-append (car (car ls))
                                            " "
-                                           (car (cdr (car ls))))
+                                           (tr-or (key-label-key
+                                                   (car (cdr (car ls))))
+                                                  (car (cdr (car ls)))))
                             16
                             (color dim:))
                 (loop (cdr ls) (+ i 1)))))))
@@ -486,33 +507,30 @@
           (list (list "SCHEME TETRIS" 34)
                 (list "shs-python-scheme-dsl" 18)
                 (list "" 12)
-                (list "RETURN to start" 22))))
+                (list (tr 'overlay-return-start) 22))))
         ((paused)
          (draw-playing-field! st)
          (draw-overlay!
-          (list (list "PAUSED" 34)
-                (list "P to resume" 20)
-                (list "R to restart" 20)
-                (list "ESC to menu" 20))))
+          (list (list (tr 'overlay-paused) 34)
+                (list (tr 'overlay-p-resume) 20)
+                (list (tr 'overlay-r-restart) 20)
+                (list (tr 'overlay-esc-menu) 20))))
         ((won)
          (draw-playing-field! st)
          (draw-overlay!
-          (list (list "LEVEL CLEAR!" 34)
-                (list (string-append "score "
-                                     (number->string (game-score st))) 22)
-                (list "RETURN onward" 20)
-                (list "R to replay" 20)
-                (list "ESC to menu" 20))))
+          (list (list (tr 'overlay-level-clear) 34)
+                (list (tr-fmt 'overlay-score (game-score st)) 22)
+                (list (tr 'overlay-return-onward) 20)
+                (list (tr 'overlay-r-replay) 20)
+                (list (tr 'overlay-esc-menu) 20))))
         ((over)
          (draw-playing-field! st)
          (draw-overlay!
-          (list (list "GAME OVER" 34)
-                (list (string-append "score "
-                                     (number->string (game-score st))) 22)
-                (list (string-append "lines "
-                                     (number->string (game-lines st))) 22)
-                (list "R to play again" 20)
-                (list "ESC to menu" 20))))
+          (list (list (tr 'overlay-game-over) 34)
+                (list (tr-fmt 'overlay-score (game-score st)) 22)
+                (list (tr-fmt 'overlay-lines (game-lines st)) 22)
+                (list (tr 'overlay-r-again) 20)
+                (list (tr 'overlay-esc-menu) 20))))
         ((playing)
          (draw-playing-field! st)))
       (apply-fx!)

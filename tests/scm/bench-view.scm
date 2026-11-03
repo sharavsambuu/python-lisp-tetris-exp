@@ -17,6 +17,7 @@
 (load "policies/gravity")
 (load "rules/pipeline")
 (load "content/campaign")
+(load "content/locale")
 (load "presentation/view")
 (load "conductor/arcade")
 (load "fake-host")

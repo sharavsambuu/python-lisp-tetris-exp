@@ -115,13 +115,19 @@ BEEP_SPECS = {
     "menu-select": (460, 0.08, 0.45),
 }
 
+#: The display font, bundled with the game: Fixedsys Excelsior — its
+#: Cyrillic coverage (Ө and Ү included) is what makes the Mongolian locale
+#: drawable. A missing file is not fatal; the built-in default takes over.
+FONT_PATH = Path(__file__).resolve().parent / "assets" / "fsex2p00_public.ttf"
+
 class PygameHost:
     """The edge object: one instance, installed into the env as primitives."""
 
     def __init__(self, *, headless: bool = False, max_frames: int | None = None,
                  autostart: bool = False, play_script: bool = False,
                  mode: str | None = None, level: int | None = None,
-                 seed: int | None = None, ai: bool = False) -> None:
+                 seed: int | None = None, ai: bool = False,
+                 locale: str | None = None) -> None:
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -136,6 +142,7 @@ class PygameHost:
         self.level = level
         self.seed = seed
         self.ai = ai
+        self.locale = locale
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
@@ -261,14 +268,21 @@ class PygameHost:
         """The CLI as the alist Scheme boots from.
 
         ``((mode . "sprint") (level . 5) (seed . 7) (ai . #t)
-        (autostart . #t))`` — only the flags the run actually carried, so
-        the Scheme side can ``assq`` its way through and treat an absent
-        key as "not asked for".
+        (autostart . #t) (locale . "mn"))`` — only the flags the run
+        actually carried, so the Scheme side can ``assq`` its way through
+        and treat an absent key as "not asked for".
+
+        Each entry is a true dotted pair and the alist is one flat proper
+        list — the same shape the fake host's ``*host-boot-config*``
+        spells by hand. (The old build wrote ``make_list([p, out])``,
+        which makes the two-element list ``(p out)``, not ``(cons p out)``:
+        a second flag buried the first, so ``--mode`` next to
+        ``--autostart`` was silently dropped and the AI never enabled.)
         """
-        from lisp.types import NIL, Symbol, make_list
+        from lisp.types import NIL, Pair, Symbol, make_list
 
         def pair(key, value):
-            return make_list([Symbol(key), value])
+            return Pair(Symbol(key), value)
 
         out = NIL
         pairs = []
@@ -282,9 +296,10 @@ class PygameHost:
             pairs.append(pair("ai", True))
         if self.autostart:
             pairs.append(pair("autostart", True))
-        for p in reversed(pairs):
-            out = make_list([p, out])
-        return out
+        if self.locale:
+            pairs.append(pair("locale", self.locale))
+        # One flat proper list, first flag first — an alist assq can walk.
+        return make_list(pairs) if pairs else NIL
 
 
     # ------------------------------------------------------------------ #
@@ -314,7 +329,18 @@ class PygameHost:
         size = int(size)
         font = self._fonts.get(size)
         if font is None:
-            font = pygame.font.Font(None, size)
+            try:
+                font = pygame.font.Font(str(FONT_PATH), size)
+            except (pygame.error, FileNotFoundError, OSError):
+                font = pygame.font.Font(None, size)
+            # Missing-glyph insurance: a translation the bundled font
+            # cannot draw falls through to the built-in font instead of
+            # rendering a blank box. Older pygame without set_fallback
+            # simply loses the safety net.
+            try:
+                font.set_fallback([pygame.font.Font(None, size)])
+            except AttributeError:
+                pass
             self._fonts[size] = font
         return font
 
@@ -457,11 +483,15 @@ def main(argv: list[str] | None = None) -> int:
     seed = None
     if "--seed" in argv:
         seed = int(argv[argv.index("--seed") + 1])
+    locale = None
+    if "--locale" in argv:
+        locale = argv[argv.index("--locale") + 1]
     ai = "--ai" in argv
 
     host = PygameHost(headless=headless, max_frames=max_frames,
                       autostart=autostart, play_script=play_script,
-                      mode=mode, level=level, seed=seed, ai=ai)
+                      mode=mode, level=level, seed=seed, ai=ai,
+                      locale=locale)
     env = make_game_env(host)
     from lisp import load_lisp
 

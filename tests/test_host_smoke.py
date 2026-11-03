@@ -140,7 +140,7 @@ def test_step_budget_is_a_per_program_ceiling():
                     "domain/modes", "domain/game", "domain/plan",
                     "rules/commands", "rules/kicks", "rules/scoring",
                     "policies/gravity", "rules/pipeline", "content/campaign",
-                    "presentation/view", "conductor/arcade"]:
+                    "content/locale", "presentation/view", "conductor/arcade"]:
             load_lisp(env, SCHEME / (mod + ".scm"))
 
         run('(open-window! 640 640 "test")', env)
@@ -228,7 +228,7 @@ def test_painter_paints():
                 "domain/modes", "domain/game", "domain/plan",
                 "rules/commands", "rules/kicks", "rules/scoring",
                 "policies/gravity", "rules/pipeline", "content/campaign",
-                "presentation/view", "conductor/arcade"]:
+                "content/locale", "presentation/view", "conductor/arcade"]:
         load_lisp(env, SCHEME / (mod + ".scm"))
 
     run('(open-window! 640 640 "test")', env)

@@ -23,6 +23,7 @@
 (load "rules/pipeline")
 
 (load "content/campaign")
+(load "content/locale")
 (load "presentation/view")
 (load "conductor/arcade")
 
@@ -109,6 +110,26 @@
 ;; Nothing painted outside the viewport — the fit invariant for the frame.
 (tk-assert "every painter call fits the window"
            (every host-fits-window? *host-log*))
+
+;; The language setting: two downs from the top land on LANGUAGE; RETURN
+;; cycles to Mongolian and the next repaint speaks it. A second RETURN
+;; cycles back — the setting is a two-way door. A fresh boot afterwards
+;; puts the cursor back where the later sections expect it.
+(host-type! "down")
+(host-type! "down")
+(host-type! "return")
+(draw-screen!)
+(tk-assert "the menu speaks Mongolian after the toggle"
+           (any (lambda (s) (string-contains? s "Монгол")) (host-text-strings)))
+(tk-assert "mongolian keeps the title"
+           (member "SCHEME TETRIS" (host-text-strings)))
+(tk-assert "the mongolian frame's painter calls fit"
+           (every host-fits-window? *host-log*))
+(host-type! "return")
+(draw-screen!)
+(tk-assert "a second toggle answers English"
+           (any (lambda (s) (string-contains? s "English")) (host-text-strings)))
+(boot-fresh!)
 
 ;; --------------------------------------------------------------------- ;;
 ;;  the ladder (campaign screen)                                             ;;

@@ -39,8 +39,8 @@ import host.pygame_host as ph  # noqa: E402
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
-           "rules/pipeline", "content/campaign", "presentation/view",
-           "conductor/arcade"]
+           "rules/pipeline", "content/campaign", "content/locale",
+           "presentation/view", "conductor/arcade"]
 
 
 @pytest.fixture()

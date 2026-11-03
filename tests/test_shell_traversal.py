@@ -27,7 +27,7 @@ from lisp.types import NIL, intern, intern_keyword  # noqa: E402
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
-           "rules/pipeline", "content/campaign", "presentation/view",
+           "rules/pipeline", "content/campaign", "content/locale", "presentation/view",
            "conductor/arcade"]
 
 K_TYPE = intern_keyword("type")

@@ -458,6 +458,41 @@
 (tk-check "a free-play win returns to the title" (screen) 'title)
 
 ;; --------------------------------------------------------------------- ;;
+;;  the seed expires with its match                                        ;;
+;; --------------------------------------------------------------------- ;;
+
+;; --seed steers the FIRST match of a session — and then expires. A
+;; pinned seed is a test's handle and a replay wish, never a
+;; session-long sentence: without the expiry, every match after the
+;; first re-dealt the same opening forever.
+(tk-section "the seed expires with its match")
+
+(boot-fresh!)
+(set! *seed* 7)
+(start-match! 'marathon '() 'free #f #f #f)
+(let ((dealt (bag-queue (game-bag *st*))))
+  ;; The wish replays: the same seed, the same deal.
+  (set! *seed* 7)
+  (start-match! 'marathon '() 'free #f #f #f)
+  (tk-check "a set seed steers the deal"
+            (bag-queue (game-bag *st*)) dealt)
+  ;; The seed is spent: the next match — the same command, no new
+  ;; --seed — deals from a fresh clock.
+  (start-match! 'marathon '() 'free #f #f #f)
+  (tk-assert "the spent seed did not deal the same bag again"
+             (not (equal? (bag-queue (game-bag *st*)) dealt)))
+  (tk-assert "the spent seed did not linger" (not *seed*)))
+
+;; Two seedless matches, two different shuffles — the randomness a
+;; player actually feels.
+(let ((dealt (begin
+               (start-match! 'marathon '() 'free #f #f #f)
+               (bag-queue (game-bag *st*)))))
+  (start-match! 'marathon '() 'free #f #f #f)
+  (tk-assert "seedless matches do not repeat"
+             (not (equal? (bag-queue (game-bag *st*)) dealt))))
+
+;; --------------------------------------------------------------------- ;;
 ;;  the profile — the settle was a save, and a fresh boot reads it back   ;;
 ;; --------------------------------------------------------------------- ;;
 

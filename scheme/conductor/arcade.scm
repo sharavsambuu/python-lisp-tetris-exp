@@ -106,6 +106,11 @@
                  (display (describe-condition e))
                  (newline)))
         (let ((seed (or *seed* (new-seed))))
+          ;; The host's --seed steers the FIRST match of the session and
+          ;; then expires: a pinned seed is a test's handle and a replay
+          ;; wish, never a session-long sentence — without this, every
+          ;; match after the first re-dealt the same opening forever.
+          (set! *seed* #f)
           (set! *st* (fresh-game seed: seed mode: mode-name options: options))
           (set! *origin* origin)
           (set! *challenge* challenge)
@@ -207,6 +212,9 @@
                                   mode: 'marathon options: '())
                       (fresh-game seed: (new-seed)
                                   mode: 'marathon options: '())))
+        ;; The same expiry as a solo match: --seed steers the first
+        ;; duel's left side, then the session deals fresh again.
+        (set! *seed* #f)
         (set! *r-lock-count* 0)
         (set! *lock-count* 0)
         (let* ((id (symbol->string (persona-id persona)))

@@ -755,7 +755,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--level", type=int, default=None, metavar="N",
                         help="the starting level")
     parser.add_argument("--seed", type=int, default=None, metavar="N",
-                        help="the bag's seed: a steerable, replayable match")
+                        help="the first match's bag seed: a steerable, "
+                             "replayable match — later matches deal fresh")
     parser.add_argument("--locale", default=None, metavar="LOCALE",
                         help="the session's language (e.g. en, mn)")
     parser.add_argument("--profile", default=None, metavar="PATH",

@@ -169,14 +169,15 @@ def test_duel_painter_keeps_up_with_two_full_boards():
 
 @pytest.mark.slow
 def test_duel_rect_cache_survives_a_shake():
-    """A slam's shake must not rebuild both full boards on every frame.
+    """A slam's shake must not rebuild either board — on any frame.
 
-    The rect cache is keyed by (board, origin, shake). A duel needs two
-    origins times the seven shake offsets the decay can round to; the
-    cache once held five entries, so adding one origin's new offset
-    evicted the other origin's, and every frame of a decaying shake paid
-    the rebuild — measured ~53 ms a frame instead of ~7 ms. Warm every
-    offset, then cycle them: hits should cost about a stable frame.
+    The rect cache is keyed by (board, origin) alone: the shake rides
+    the `draw-rects!` crossing as a (dx dy) offset instead of living in
+    the cached identity. The first cache keyed on the shake too — a
+    decaying slam walked seven rounded offsets per board, and the
+    capacity could not hold them, so every frame of the decay rebuilt
+    both boards (~44 ms measured against ~13 ms stable) exactly while
+    the fighting was most intense.
     """
     import time
 
@@ -184,20 +185,18 @@ def test_duel_rect_cache_survives_a_shake():
     env = make_env(search_paths=[SCHEME, TESTS])
     load_lisp(env, TESTS / "bench-view.scm")
 
-    for sh in range(7):
-        run(f"(set! *shake-px* {sh}.0)", env)
-        run("(draw-duel! *duel* *persona*)", env)
+    run("(draw-duel! *duel* *persona*)", env)  # warm both boards
 
-    def per_draw(n, vary):
+    def per_draw(n, shake):
         t0 = time.perf_counter()
         for i in range(n):
-            if vary:
+            if shake:
                 run(f"(set! *shake-px* {i % 7}.0)", env)
             run("(draw-duel! *duel* *persona*)", env)
         return (time.perf_counter() - t0) / n * 1000
 
-    stable = per_draw(7, vary=False)
-    cycled = per_draw(14, vary=True)
-    assert cycled < max(stable * 3, stable + 15), (
-        f"a shake frame costs {cycled:.0f} ms against {stable:.0f} ms "
-        "stable — the rect cache is evicting the other board's origin")
+    stable = per_draw(7, shake=False)
+    shaken = per_draw(14, shake=True)
+    assert shaken < max(stable * 2, stable + 8), (
+        f"a shaken draw costs {shaken:.0f} ms against {stable:.0f} ms "
+        "stable — the shake is reaching the cached rect list")

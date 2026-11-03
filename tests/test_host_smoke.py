@@ -276,7 +276,7 @@ def test_painter_paints():
         pygame.draw.rect(pygame.display.get_surface(), tuple(rgb),
                          pygame.Rect(int(x), int(y), int(w), int(h)))
 
-    def draw_rects(flat):
+    def draw_rects(flat, dx=0, dy=0):
         if flat is None or not isinstance(flat, (list, tuple)):
             return
         vals = [int(v) for v in flat]

@@ -67,7 +67,7 @@ def env():
             ("open-window!", lambda w, h, t: pygame.display.set_mode((640, 640))),
             ("clear-screen!", lambda rgb: pygame.display.get_surface().fill(tuple(rgb))),
             ("draw-rect!", draw_rect),
-            ("draw-rects!", lambda flat: None),
+            ("draw-rects!", lambda flat, dx=0, dy=0: None),
             ("draw-frame!", lambda x, y, w, h, rgb: pygame.draw.rect(
                 pygame.display.get_surface(), tuple(rgb),
                 pygame.Rect(int(x), int(y), int(w), int(h)), width=2)),

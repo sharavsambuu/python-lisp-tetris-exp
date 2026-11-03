@@ -66,10 +66,12 @@
 
 (define (draw-rect! x y w h rgb) (host-log! 'rect x y w h rgb))
 
-(define (draw-rects! flat)
+(define (draw-rects! flat . shake)
   ;; One crossing, many rectangles: the board's hot path. The log
   ;; carries the COUNT — board cells are asserted by count or by
-  ;; pixel-sampling against the real host, never one by one.
+  ;; pixel-sampling against the real host, never one by one. The two
+  ;; optional arguments are the shake's (dx dy), which ride the
+  ;; crossing instead of invalidating the board's cached list.
   (host-log! 'rects (quotient (length flat) 7)))
 
 (define (draw-frame! x y w h rgb) (host-log! 'frame x y w h rgb))

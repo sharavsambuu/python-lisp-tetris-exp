@@ -29,6 +29,8 @@
           drop-distance
           landing-y-at
           landing-y/hts
+          landing-row/hts
+          shape-fits-at?
           ghost-cells
           ghost-cells/hts
           active-cells
@@ -487,20 +489,29 @@
     ;; (the ghost) and the planner 40 times a piece. The precondition
     ;; is unchanged: #f when the placement does not fit where the
     ;; piece is.
+    ;;
+    ;; The pure core takes the shape, the column, the row and the
+    ;; heights directly — no game state — which is what lets the
+    ;; planner's forty-placement sweep reuse its cached shape lists and
+    ;; cached columns without touching the board at all.
+    (define (landing-row/hts shape x y hts rows)
+      (let loop ((cells shape) (best #f))
+        (if (null? cells)
+            best
+            (let* ((c (car cells))
+                   (cand (- (- rows (vector-ref hts (+ x (car c))))
+                            1
+                            (cdr c))))
+              (loop (cdr cells)
+                    (if (or (eq? best #f) (< cand best)) cand best))))))
+
     (define (landing-y/hts state hts x rot)
       (let* ((p (game-active state))
              (name (falling-name p))
              (shape (piece-cells name rot)))
         (if (not (shape-fits-at? (game-board state) shape x (falling-y p)))
             #f
-            (let ((topocc (lambda (cx) (- matrix-height (vector-ref hts (+ x cx))))))
-              (let loop ((cells shape) (y #f))
-                (cond ((null? cells) y)
-                      (else
-                       (let ((cand (- (topocc (car (car cells)))
-                                      1 (cdr (car cells)))))
-                         (loop (cdr cells)
-                               (if (or (eq? y #f) (< cand y)) cand y))))))))))
+            (landing-row/hts shape x (falling-y p) hts matrix-height))))
 
     ;; Where the piece would land, as cells — the ghost's shadow, from
     ;; precomputed heights. A piece that does not fit where it stands

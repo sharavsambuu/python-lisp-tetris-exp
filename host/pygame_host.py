@@ -552,7 +552,7 @@ class PygameHost:
             pygame.Rect(int(x), int(y), int(w), int(h)),
         )
 
-    def draw_rects(self, flat) -> None:
+    def draw_rects(self, flat, dx=0, dy=0) -> None:
         """A batch of rectangles, one seam crossing for all of them.
 
         ``flat`` is one proper list of numbers — (x y w h r g b) per
@@ -564,6 +564,11 @@ class PygameHost:
         interpreter builds one list and crosses once; the paint loop
         below is plain Python. A malformed list (a length that is not a
         multiple of 7, a non-number) kills the batch, not the frame.
+
+        The optional ``dx``/``dy`` shift every rectangle — the shake, a
+        whole-board thud offset, rides the crossing it already pays for
+        instead of forcing the script side to rebuild the cached list
+        per shake step.
         """
         surface = self._require_display()
         from lisp.types import NIL
@@ -577,7 +582,8 @@ class PygameHost:
             return
         for i in range(0, len(values), 7):
             x, y, w, h, r, g, b = values[i:i + 7]
-            pygame.draw.rect(surface, (r, g, b), pygame.Rect(x, y, w, h))
+            pygame.draw.rect(surface, (r, g, b),
+                             pygame.Rect(x + dx, y + dy, w, h))
 
     def draw_frame(self, x, y, w, h, rgb) -> None:
         pygame.draw.rect(

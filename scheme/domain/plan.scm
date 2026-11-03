@@ -27,32 +27,42 @@
           w-bumpiness
           w-wells
           w-attack
+          w-roof
           min-of
           roofline
           bumpiness
           well-depth
           wells-sum
           raise-copy
+          raised-profile
           raised-heights
           new-holes
           completed-rows
           placement-score)
 
   (begin
-    ;; Weights: (cleared holes bumpiness wells attack). `cleared` is the height of
-    ;; the *lowest* column after the placement — keeping the roofline low is
-    ;; what keeps the game alive; the next three are penalties; `attack`
-    ;; prices the rows a placement completes *now* — the style term that
-    ;; makes a Blitz out of the same forty placements. They are data, so
-    ;; a caller (a persona, a mode, the edge) can publish its own.
-    (define (weights cleared holes bumpiness wells attack)
-      (list cleared holes bumpiness wells attack))
+    ;; Weights: (cleared holes bumpiness wells attack [roof]). `cleared` is
+    ;; the height of the *lowest* column after the placement — keeping the
+    ;; roofline low is what keeps the game alive; the next three are
+    ;; penalties; `attack` prices the rows a placement completes *now* —
+    ;; the style term that makes a Blitz out of the same forty placements.
+    ;; `roof`, an optional sixth dial, penalizes the *tallest* column: the
+    ;; term that says a mountain in any one lane is a death sentence no
+    ;; matter how even the rest of the top is. A five-argument call stays
+    ;; a five-dial list — the pinned persona shape — and reads roof 0.
+    (define (weights cleared holes bumpiness wells attack . roof)
+      (if (null? roof)
+          (list cleared holes bumpiness wells attack)
+          (list cleared holes bumpiness wells attack (car roof))))
 
     (define (w-cleared ws)   (list-ref ws 0))
     (define (w-holes ws)     (list-ref ws 1))
     (define (w-bumpiness ws) (list-ref ws 2))
     (define (w-wells ws)     (list-ref ws 3))
     (define (w-attack ws)    (list-ref ws 4))
+    ;; Five-dial weight lists (old personas, test drivers) read 0.
+    (define (w-roof ws)
+      (if (> (length ws) 5) (list-ref ws 5) 0))
 
     ;; The smallest column height — the *cleared* height of a profile.
     (define (min-of v)
@@ -104,6 +114,23 @@
         (vector-set! out col (max (vector-ref out col) h))
         out))
 
+    ;; The raised profile in ONE allocation: copy once, raise each block's
+    ;; column in place. `raised-heights` above answers the same vector but
+    ;; pays a copy per cell — the planner calls this forty times a piece,
+    ;; and the garbage the copies feed the collector is the difference
+    ;; between a quiet frame and a hitch.
+    (define (raised-profile heights cells x ly rows)
+      (let ((out (vector-copy heights)))
+        (let loop ((cs cells))
+          (if (null? cs)
+              out
+              (let* ((c (car cs))
+                     (col (+ x (car c)))
+                     (h (- rows (+ ly (cdr c)))))
+                (if (> h (vector-ref out col))
+                    (vector-set! out col h))
+                (loop (cdr cs)))))))
+
     ;; Each block of the piece raises its own column. `cells` are `(dx . dy)`
     ;; pairs from the piece origin, with y increasing *downward*, so a
     ;; block's height in its column is `rows - y`.
@@ -149,9 +176,11 @@
     (define (completed-rows heights raised)
       (- (min-of raised) (min-of heights)))
 
-    ;; Higher is better.
+    ;; Higher is better. One allocation per call (the raised profile);
+    ;; the roof term prices the tallest column when the weights carry a
+    ;; sixth dial.
     (define (placement-score ws heights cells x ly rows)
-      (let* ((raised (raised-heights heights cells x ly rows))
+      (let* ((raised (raised-profile heights cells x ly rows))
              (cleared (min-of raised))
              (holes (new-holes heights cells x ly rows))
              (attack (completed-rows heights raised)))
@@ -162,5 +191,6 @@
               (* (w-attack ws) attack))
            (+ (* (w-holes ws) holes)
               (* (w-bumpiness ws) (bumpiness raised))
-              (* (w-wells ws) (wells-sum raised rows)))))))
+              (* (w-wells ws) (wells-sum raised rows))
+              (* (w-roof ws) (roofline raised)))))))
 )

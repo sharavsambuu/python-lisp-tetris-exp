@@ -283,6 +283,17 @@
     ;; hit is a list walk of four entries.
     (define *stack-top-cache* '())
 
+    ;; The eviction all three caches share: the list is newest-first,
+    ;; so the oldest entry is the LAST pair. The first version dropped
+    ;; `(cdr cache)` — the HEAD — which is the *newest* entry: at a
+    ;; full cache, every insert killed the previous insert, and a
+    ;; duel's two live boards evicted each other every frame (two full
+    ;; rebuilds, ~32ms, forever). Capacity was never the disease.
+    (define (cache-without-oldest es)
+      (cond ((null? es) es)
+            ((null? (cdr es)) '())
+            (else (cons (car es) (cache-without-oldest (cdr es))))))
+
     (define (cached-stack-top st)
       (let ((b (game-board st)))
         (let hit ((entries *stack-top-cache*))
@@ -291,7 +302,7 @@
                    (set! *stack-top-cache*
                          (cons (cons b top)
                                (if (> (length *stack-top-cache*) 4)
-                                   (cdr *stack-top-cache*)
+                                   (cache-without-oldest *stack-top-cache*)
                                    *stack-top-cache*)))
                    top))
                 ((eq? (car (car entries)) b) (cdr (car entries)))
@@ -402,31 +413,33 @@
     ;; and a duel repaints every frame. Boards are immutable values that
     ;; change only on a lock, a clear, or garbage — so the flat list is
     ;; cached against the board's identity (`eq?`, never `equal?`: a
-    ;; deep compare would cost more than the rebuild), plus the origin
-    ;; and the shake, which change the pixels without changing the
-    ;; board. A hit is one host crossing; a miss is the rebuild, and
-    ;; misses are the game's events, not the frames.
+    ;; deep compare would cost more than the rebuild), plus the origin.
+    ;; A hit is one host crossing; a miss is the rebuild, and misses are
+    ;; the game's events, not the frames.
     ;;
-    ;; The capacity has to hold BOTH duel origins at every shake offset
-    ;; the decay can round to (0..6): 14 entries. It held five once, and
-    ;; a duel during a slam thrashed — adding the left board's new offset
-    ;; evicted the right board's, so every frame of the shake rebuilt
-    ;; both full boards (~53ms measured). Capacity is the geometry of the
-    ;; key, not a round number.
-    (define *board-rects-cache-cap* 16)
+    ;; The shake is NOT in the key, and that is the lesson this cache
+    ;; teaches twice. The first version keyed on the shake too — and the
+    ;; shake decays through ~7 rounded values after every thud, so every
+    ;; lock, clear, and garbage landing rebuilt both boards for the ~7
+    ;; frames of the decay: measured, a live Blitz duel drew at 44ms a
+    ;; frame, all of it rebuilds, all of it exactly when the fighting
+    ;; was most intense. A uniform offset is not part of what a board
+    ;; *is*; it rides the draw — `draw-rects!` takes the (dx dy) and
+    ;; shifts while it paints, and the cache answers the board alone.
+    (define *board-rects-cache-cap* 8)
     (define *board-rects-cache* '())
 
     (define (build-board-rects! st ox)
       (let* ((cell (lay cell:))
              (s (- cell 1))
-             (oy (+ (lay board-y:) (shake-offset))))
+             (oy (lay board-y:)))
         (let loop ((entries (board-cells (game-board st))) (acc '()))
           (if (null? entries)
               (reverse acc)
               (let* ((e (car entries))
                      (pos (car e))
                      (rgb (piece-color (cdr e)))
-                     (x (+ ox (* (car pos) cell) (shake-offset)))
+                     (x (+ ox (* (car pos) cell)))
                      (y (+ oy (* (cdr pos) cell))))
                 ;; Push each entry BACKWARDS — (b g r h w y x) — so the
                 ;; final `reverse` restores both the cell order and the
@@ -440,25 +453,25 @@
                                         (cons s (cons s (cons y (cons x acc)))))))))))))
 
     (define (board-rects! st ox)
-      (let ((b (game-board st)) (sh (shake-offset)))
+      (let ((b (game-board st)))
         (let hit ((entries *board-rects-cache*))
           (cond ((null? entries)
                  (let ((flat (build-board-rects! st ox)))
                    (set! *board-rects-cache*
-                         (cons (list b ox sh flat)
+                         (cons (list b ox flat)
                                (if (>= (length *board-rects-cache*)
                                        *board-rects-cache-cap*)
-                                   (cdr *board-rects-cache*)
+                                   (cache-without-oldest *board-rects-cache*)
                                    *board-rects-cache*)))
                    flat))
                 ((and (eq? (car (car entries)) b)
-                      (= (cadr (car entries)) ox)
-                      (= (caddr (car entries)) sh))
-                 (cadddr (car entries)))
+                      (= (cadr (car entries)) ox))
+                 (caddr (car entries)))
                 (else (hit (cdr entries)))))))
 
     (define (draw-board-at! st ox)
-      (draw-rects! (board-rects! st ox)))
+      (draw-rects! (board-rects! st ox)
+                   (shake-offset) (shake-offset)))
 
     (define (draw-board! st)
       (draw-board-at! st (lay board-x:)))
@@ -488,7 +501,7 @@
                    (set! *heights-cache*
                          (cons (cons b hts)
                                (if (> (length *heights-cache*) 4)
-                                   (cdr *heights-cache*)
+                                   (cache-without-oldest *heights-cache*)
                                    *heights-cache*)))
                    hts))
                 ((eq? (car (car entries)) b) (cdr (car entries)))

@@ -399,6 +399,34 @@
           (> (placement-score ws hs (piece-cells 'o 0) 0 13 20)
              (placement-score ws hs (piece-cells 'o 0) 8 13 20))))
 
+;; The sixth dial: a roof penalty on the tallest column. The five-dial
+;; form still reads — a missing roof is 0, so old personas and old
+;; drivers score exactly as they always did — and the one-allocation
+;; raised profile agrees with the copy-per-cell form it replaced.
+(assert "the roof dial prices the mountain, and only the mountain"
+        (let* ((hs (vector 4 6 6 6 6 6 6 6 6 6))
+               (cells (piece-cells 'o 0))
+               (raised (raised-profile hs cells 4 13 20))
+               (roof-price (roofline raised))
+               (with-roof (weights 2 3 1 1 0 1))
+               (without (weights 2 3 1 1 0)))
+          (and (= (w-roof without) 0)
+               (= (w-roof with-roof) 1)
+               (equal? raised (raised-heights hs cells 4 13 20))
+               (= (- (placement-score with-roof hs cells 4 13 20)
+                     (placement-score without hs cells 4 13 20))
+                  (- 0 roof-price)))))
+(assert "a roof-aware judge refuses the mountain the flat judge forgives"
+        (let* ((hs (vector 14 3 3 3 3 3 3 3 3 3))
+               (cells (piece-cells 'o 0))
+               ;; Same piece, same landing row — on the flat side and on
+               ;; the mountain. Flat keeps the roofline; the mountain
+               ;; raises it. Only the roof dial can tell them apart.
+               (roofy (weights 0 0 0 0 0 1.0))
+               (flat-side (placement-score roofy hs cells 2 15 20))
+               (peak-side (placement-score roofy hs cells 0 5 20)))
+          (> flat-side peak-side)))
+
 ;; --------------------------------------------------------------------- ;;
 ;;  campaign — content as data, and the progress it carries               ;;
 ;; --------------------------------------------------------------------- ;;

@@ -569,13 +569,25 @@
                 (else
                  (let* ((rot (quotient i 10))
                         (x (remainder i 10))
-                        (ly (landing-y-at st x rot)))
+                        (shape (list-ref *search-shapes* rot))
+                        (p (game-active st))
+                        ;; The heights form: the precondition still asks
+                        ;; the real board (a wall kick can refuse a
+                        ;; column), but the landing row reads off the
+                        ;; cached columns — no per-row cell lists, no
+                        ;; allocations, forty times a piece.
+                        (ly (if (and p
+                                     (shape-fits-at? (game-board st)
+                                                     shape x (falling-y p)))
+                                (landing-row/hts shape x (falling-y p)
+                                                 *search-hts* *search-rows*)
+                                #f)))
                    (if (not ly)
                        ;; Refused placements cost only the crossing: they do
                        ;; not spend the frame's score budget.
                        (loop scored (+ i 1))
                        (let ((score (placement-score ws *search-hts*
-                                                     (list-ref *search-shapes* rot)
+                                                     shape
                                                      x ly *search-rows*)))
                          (when (> score *search-best*)
                            (set! *search-best* score)

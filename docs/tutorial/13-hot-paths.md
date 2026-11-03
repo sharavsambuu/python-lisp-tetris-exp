@@ -350,8 +350,8 @@ per epoch, per change, or per frame.
   per-epoch state), and pin a hot path with a benchmark test whose bounds
   are measurements, not vibes.
 
-*Next: the series is complete — [the root README](../../README.md) flexes
-what these chapters built, and [tests/README.md](../../tests/README.md)
-explains the test architecture this chapter's guard lives in.*
+*Next: [Building gameplay elements](14-gameplay-elements.md) — the craft
+chapter: modes, scoring chains, and the journal facts that feed the feel
+of Part V.*
 
 

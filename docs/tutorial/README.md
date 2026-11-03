@@ -8,7 +8,7 @@ one the game actually relies on.
 
 ## How the series teaches
 
-The thirteen chapters form one arc, in four parts. Each chapter opens with
+The sixteen chapters form one arc, in five parts. Each chapter opens with
 **where you are** and **what you will be able to do**, and closes with a
 **checkpoint** — a one-line self-test. Read them in order the first time;
 after that, each stands alone as a reference.
@@ -16,7 +16,8 @@ after that, each stands alone as a reference.
 Alongside the reading you build a **running project**: a Breakout clone on the
 same DSL, one piece per chapter — a boot and a paddle in chapter 1, a frame
 loop in chapter 6, an AI in chapter 8, a purity fence in chapter 11, a
-benchmark guard in chapter 13. The
+benchmark guard in chapter 13 — and the feel of chapters 14–16: a
+multiball element, a brick-combo popup, and a pitch-graded shatter. The
 exercises marked ⟡ are its steps; by the end you will have written a second,
 smaller game in this style, and every technique will be something you have
 *done*, not something you have *read*.
@@ -53,6 +54,14 @@ smaller game in this style, and every technique will be something you have
 | 11 | [Bounded contexts](11-bounded-contexts.md) | DDD with `define-library`: closed scopes, the dependency DAG, the purity fence |
 | 12 | [The six SRFIs](12-the-srfis.md) | SRFI 1/26/88/89/197/241 — where each earns its keep, and the judgment calls |
 | 13 | [Hot paths](13-hot-paths.md) | The three slowdown traps of a tree-walking interpreter, worst-case harnesses, benchmark guards with justified bounds |
+
+### Part V — The feel (making it fun, and keeping it honest)
+
+| # | Chapter | You learn |
+|---|---------|-----------|
+| 14 | [Building gameplay elements](14-gameplay-elements.md) | Modes as closed variants, one rule two customers, per-mode scoring policies, the journal announces the moment |
+| 15 | [The moving edge](15-game-animations.md) | The animation rail dissected pop by pop, escalation with ceilings, the repaint gate answers visibility, type scales text never |
+| 16 | [The mixing desk](16-game-sound.md) | Generated tones as table rows, the ranking mix, the announcer overlay, escalation without a siren, silence as a decision |
 
 
 ## What the root README flexes → where the series teaches it

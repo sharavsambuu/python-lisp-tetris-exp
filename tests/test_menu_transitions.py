@@ -39,7 +39,8 @@ import host.pygame_host as ph  # noqa: E402
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
-           "rules/pipeline", "content/campaign", "content/locale",
+           "rules/pipeline", "domain/duel", "content/campaign", "content/roster",
+           "content/locale",
            "conductor/profile", "presentation/view",
             "conductor/effects", "conductor/screens",
             "conductor/input", "conductor/arcade"]
@@ -124,7 +125,7 @@ def test_title_opens_the_campaign_ladder(env):
 
 
 def test_title_opens_free_play_then_mode_then_level(env):
-    pump(env, ["down", "return"])
+    pump(env, ["down", "down", "return"])   # the ladder, Versus, Free play
     assert screen(env) == "mode", "Free play did not open the mode list"
     pump(env, ["return"])
 
@@ -141,14 +142,14 @@ def test_escape_from_campaign_returns_to_title(env):
 
 
 def test_escape_from_mode_returns_to_title(env):
-    pump(env, ["down", "return"])
+    pump(env, ["down", "down", "return"])
     assert screen(env) == "mode"
     pump(env, ["escape"])
     assert screen(env) == "title", "ESC on the mode screen did not go back"
 
 
 def test_escape_from_level_returns_to_title(env):
-    pump(env, ["down", "return", "return"])
+    pump(env, ["down", "down", "return", "return"])
     assert screen(env) == "level"
     pump(env, ["escape"])
     assert screen(env) == "title", "ESC on the level picker did not go back"
@@ -234,7 +235,7 @@ def test_leaving_a_match_owes_the_menu_a_paint(env):
 def test_effects_do_not_follow_the_next_match(env):
     """The beam and flash belong to the match that earned them."""
     start_match(env)
-    run("(view-clear-beam! '(1 2 3 4))", env)
+    run("(view-clear-beam! 'left '(1 2 3 4))", env)
     run("(view-flash! '(255 255 0) 300)", env)
     pump(env, ["escape", "escape"])      # live -> paused -> title
     assert screen(env) == "title"
@@ -262,12 +263,12 @@ def test_shell_survives_a_full_session_round_trip(env):
     A stale menu value (or a conductor that forgot to rebuild the title
     screen) would show up here as a dead second visit.
     """
-    pump(env, ["down", "return", "return", "return"])   # free play, marathon, level 1
+    pump(env, ["down", "down", "return", "return", "return"])   # free play, marathon, level 1
     assert screen(env) == "play"
     play_until_over(env)
     pump(env, ["escape"])
     assert screen(env) == "title", "ESC after game over did not reach the title"
-    pump(env, ["down", "return"])                       # free play again
+    pump(env, ["down", "down", "return"])               # free play again
     assert screen(env) == "mode", "the mode screen did not reopen after a session"
     pump(env, ["return"])                               # marathon
     assert screen(env) == "level", "the level picker did not reopen after a session"

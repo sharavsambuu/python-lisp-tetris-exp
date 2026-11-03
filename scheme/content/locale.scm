@@ -62,6 +62,12 @@
         (menu-best             "best"                            "дээд амжилт")
         (menu-level-n          "Level ~a"                        "Түвшин ~a")
         (menu-done-mark        " [x]"                            " [x]")
+        (menu-versus           "Versus"                          "Өрсөлдөөт")
+        (menu-locked           "  [locked]"                      "  [түгжсэн]")
+
+        ;; -- the versus screen ----------------------------------------
+        (title-versus          "CHOOSE YOUR OPPONENT"            "ӨРСӨГӨӨ СОНГОНО УУ")
+        (hint-versus           "RETURN: FIGHT   ESC: BACK"       "RETURN: ТУЛАН   ESC: БУЦАХ")
 
         ;; -- the ways to play (display names; keys stay English) ------
         (mode-marathon         "marathon"                        "марафон")
@@ -113,6 +119,10 @@
         (overlay-game-over     "GAME OVER"                       "ТОГЛООМ ДУУСЛАА")
         (overlay-lines         "lines ~a"                        "мөр ~a")
         (overlay-r-again       "R to play again"                 "R — дахин тоглох")
+        (overlay-duel-won      "YOU WIN!"                        "ТА ХОЖЛОО!")
+        (overlay-duel-lost     "~a wins"                         "~a хожлоо")
+        (overlay-esc-forfeit   "ESC: forfeit"                    "ESC — бууж өгөх")
+        (overlay-return-menu   "RETURN to menu"                  "RETURN — цэс рүү")
 
         ;; -- the HUD ---------------------------------------------------
         (hud-score             "SCORE"                           "ОНОО")

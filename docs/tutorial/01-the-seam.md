@@ -28,7 +28,7 @@ piece, so by chapter 12 you will have written a second, smaller game in the
 same style, and the techniques will be things you have *done*, not things you
 have *read*.
 
-## 1.1 The seam is a list of eighteen names
+## 1.1 The seam is a list of nineteen names
 
 The entire surface Python offers the game is declared in one place
 (`host/pygame_host.py`):
@@ -55,7 +55,7 @@ The names, grouped by what they own:
 
 ### One primitive, from both sides
 
-It is worth seeing one primitive end to end, because every one of the eighteen
+It is worth seeing one primitive end to end, because every one of the nineteen
 follows the same shape. On the Python side, a method on the host object:
 
 ```python

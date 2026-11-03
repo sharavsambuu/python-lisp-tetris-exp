@@ -27,7 +27,8 @@ from lisp.types import NIL, intern, intern_keyword  # noqa: E402
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",
            "rules/kicks", "rules/scoring", "policies/gravity",
-           "rules/pipeline", "content/campaign", "content/locale",
+           "rules/pipeline", "domain/duel", "content/campaign", "content/roster",
+           "content/locale",
            "conductor/profile", "presentation/view",
            "conductor/effects", "conductor/screens", "conductor/input",
            "conductor/arcade"]
@@ -66,6 +67,7 @@ def env():
             ("open-window!", lambda w, h, t: pygame.display.set_mode((640, 640))),
             ("clear-screen!", lambda rgb: pygame.display.get_surface().fill(tuple(rgb))),
             ("draw-rect!", draw_rect),
+            ("draw-rects!", lambda flat: None),
             ("draw-frame!", lambda x, y, w, h, rgb: pygame.draw.rect(
                 pygame.display.get_surface(), tuple(rgb),
                 pygame.Rect(int(x), int(y), int(w), int(h)), width=2)),

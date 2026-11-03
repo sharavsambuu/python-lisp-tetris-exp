@@ -32,7 +32,7 @@ toggles the ghost, `p` pauses, `r` restarts, `esc` backs one screen.
 
 # The seam
 
-`host/pygame_host.py` publishes exactly eighteen primitives through the DSL's
+`host/pygame_host.py` publishes exactly nineteen primitives through the DSL's
 declared `install_primitives` seam — painters (`draw-rect!`, `draw-text!`,
 `tint!`, …), the clock (`tick!`), the event pump (`poll-events!`), the boot
 config (`boot-config`), the profile (`read-profile`, `write-profile!`), the

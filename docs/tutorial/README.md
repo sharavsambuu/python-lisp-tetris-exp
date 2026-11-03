@@ -76,6 +76,7 @@ smaller game in this style, and every technique will be something you have
 | 18 | [The duel](18-the-duel.md) | Garbage as a domain arrow from the match's own random stream, the attack table as data, the offset rule, the duel as a pure value, AI-vs-AI self-play under a seed |
 | 19 | [The roster](19-the-roster.md) | Opponents as content, the planner's style term, the speed knob as the honest difficulty lever, personalities pinned by a seeded sweep |
 | 20 | [The profile](20-the-profile.md) | Growing a closed seam, a versioned document at the edge with the meaning on the script side, atomic writes, save points as semantic moments, the failure posture of a save file |
+| 21 | [Versus](21-versus.md) | Measuring the painter before the layout, the batch primitive that earned its place on the seam, two boards from one painter, the persona ladder as a menu, a human in the circuit |
 
 
 ## What the root README flexes → where the series teaches it
@@ -109,7 +110,7 @@ python -m pytest tests/ -q     # the whole suite, headless
 
 ## The one-paragraph map
 
-`host/pygame_host.py` publishes exactly eighteen primitives through the DSL's
+`host/pygame_host.py` publishes exactly nineteen primitives through the DSL's
 declared `install_primitives` seam — painters, the clock, the event pump, the
 speaker, the boot config, the profile document. Everything else is Scheme in `scheme/`, loaded in
 dependency order by `main.scm`:

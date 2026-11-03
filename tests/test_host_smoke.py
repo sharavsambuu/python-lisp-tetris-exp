@@ -60,6 +60,19 @@ def test_director_paces_a_match():
     assert "LispError" not in r.stderr, r.stderr[-2000:]
 
 
+def test_duel_boots_and_runs(tmp_path):
+    """--duel boots the fight: both wells play, the session exits clean.
+
+    The player idles, the persona's AI plays, and the wide window's
+    worst frames run headless — a two-board painter that cannot hold
+    the frame budget dies here first.
+    """
+    r = run_host("--frames", "400", "--duel", "--profile", str(tmp_path / "p.json"))
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert "LispError" not in r.stderr, r.stderr[-2000:]
+    assert "unknown persona" not in r.stderr
+
+
 def test_profile_persists_across_a_real_run(tmp_path):
     """A real headless session saves on the way out; the file is v1 JSON.
 
@@ -195,8 +208,9 @@ def test_step_budget_is_a_per_frame_ceiling(tmp_path):
                     "domain/modes", "domain/game", "domain/plan",
                     "domain/telemetry", "domain/director",
                     "rules/commands", "rules/kicks", "rules/scoring",
-                    "policies/gravity", "rules/pipeline", "content/campaign",
-                    "content/locale", "conductor/profile", "presentation/view",
+                    "policies/gravity", "rules/pipeline", "domain/duel",
+                    "content/campaign", "content/roster", "content/locale",
+                    "conductor/profile", "presentation/view",
                     "conductor/effects", "conductor/screens",
                     "conductor/input", "conductor/arcade"]:
             load_lisp(env, SCHEME / (mod + ".scm"))
@@ -262,10 +276,20 @@ def test_painter_paints():
         pygame.draw.rect(pygame.display.get_surface(), tuple(rgb),
                          pygame.Rect(int(x), int(y), int(w), int(h)))
 
+    def draw_rects(flat):
+        if flat is None or not isinstance(flat, (list, tuple)):
+            return
+        vals = [int(v) for v in flat]
+        surf = pygame.display.get_surface()
+        for i in range(0, len(vals), 7):
+            x, y, w, h, r, g, b = vals[i:i + 7]
+            pygame.draw.rect(surf, (r, g, b), pygame.Rect(x, y, w, h))
+
     install = [
         ("open-window!", lambda w, h, t: pygame.display.set_mode((int(w), int(h)))),
         ("clear-screen!", lambda rgb: pygame.display.get_surface().fill(tuple(rgb))),
         ("draw-rect!", draw_rect),
+        ("draw-rects!", draw_rects),
         ("draw-frame!", lambda x, y, w, h, rgb: pygame.draw.rect(
             pygame.display.get_surface(), tuple(rgb),
             pygame.Rect(int(x), int(y), int(w), int(h)), width=2)),
@@ -292,8 +316,8 @@ def test_painter_paints():
                 "domain/modes", "domain/game", "domain/plan",
                 "domain/telemetry", "domain/director",
                 "rules/commands", "rules/kicks", "rules/scoring",
-                "policies/gravity", "rules/pipeline", "content/campaign",
-                "content/locale", "conductor/profile", "presentation/view",
+                "policies/gravity", "rules/pipeline", "domain/duel", "content/campaign",
+                "content/roster", "content/locale", "conductor/profile", "presentation/view",
             "conductor/effects", "conductor/screens",
             "conductor/input", "conductor/arcade"]:
         load_lisp(env, SCHEME / (mod + ".scm"))
@@ -309,7 +333,8 @@ def test_painter_paints():
     surf = pygame.display.get_surface()
     assert surf.get_at((5, 5))[:3] == (10, 10, 16), "menu veil missing"
 
-    # Menu traversal: down to Free play, pick it, pick a mode, start.
+    # Menu traversal: down past Versus to Free play, pick it, pick a mode, start.
+    run('(menu-key! "down")', env)     # cursor to Versus
     run('(menu-key! "down")', env)     # cursor to Free play
     run('(menu-key! "return")', env)   # pick it
     assert run("*screen*", env) == "mode", "free play did not open the mode list"

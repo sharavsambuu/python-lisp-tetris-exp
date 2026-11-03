@@ -18,7 +18,10 @@
 (load "rules/scoring")
 (load "policies/gravity")
 (load "rules/pipeline")
+(load "domain/duel")
+
 (load "content/campaign")
+(load "content/roster")
 (load "content/locale")
 (load "conductor/profile")
 (load "presentation/view")
@@ -31,6 +34,7 @@
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
         (tetris game)
+        (tetris duel) (tetris roster)
         (tetris board)
         (tetris geometry))
 
@@ -64,4 +68,14 @@
 (newline)
 (display "danger-tint?: ")
 (display (danger-tint? *st*))
+(newline)
+
+;; The duel's worst frame: BOTH boards full. The bench harness holds the
+;; same full board on both sides of one duel, so a timing loop can draw
+;; the two-board picture — the number that decided the layout (§ plan 5a)
+;; and the batch painter.
+(set! *duel* (make-duel *st* *st*))
+(set! *persona* (car roster))
+(display "duel cells: ")
+(display (* 2 (length (board-cells (game-board *st*)))))
 (newline)

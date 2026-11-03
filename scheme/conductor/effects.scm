@@ -114,6 +114,48 @@
         (journal-drained st)))
 
     ;; ---------------------------------------------------------------- ;;
+    ;;  The duel's drain — per side, before the exchange                  ;;
+    ;; ---------------------------------------------------------------- ;;
+    ;;
+    ;; The duel's exchange drains both journals inside the pure value, so
+    ;; the edge scans BEFORE the step: each side's facts award on that
+    ;; side's rail — its own beam, its own garbage meter, its own lock
+    ;; counter (each side's AI reads its own), with one headline sound
+    ;; per side per frame. The garbage fact crosses sides: the receiver
+    ;; hears the warning and wears the meter; the sender hears the thud,
+    ;; because an attack must never feel swallowed. The flash and the
+    ;; shake answer the PLAYER's side only — one window, one veil.
+
+    (define (duel-award! side events)
+      (for-each
+       (lambda (ev)
+         (variant-match ev
+           ((locked _)
+            (if (eq? side 'right)
+                (set! *r-lock-count* (+ *r-lock-count* 1))
+                (set! *lock-count* (+ *lock-count* 1))))
+           (else #f)))
+       events)
+      (sfx-journal! events)
+      (for-each
+       (lambda (ev)
+         (variant-match ev
+           ((garbage n)
+            (sfx! "garbage-warn")
+            (view-garbage! side n)
+            (sfx! "thud"))
+           (else #f)))
+       events)
+      (if (eq? side 'left)
+          (award-journal! events)
+          (for-each
+           (lambda (ev)
+             (variant-match ev
+               ((cleared rows) (view-clear-beam! 'right rows))
+               (else #f)))
+           events)))
+
+    ;; ---------------------------------------------------------------- ;;
     ;;  The effects award table — what a fact is worth on the screen       ;;
     ;; ---------------------------------------------------------------- ;;
 
@@ -146,7 +188,7 @@
               ;; The beam: bars across the rows the clear took, burning as
               ;; long as the flash — the animation that reads "these rows
               ;; just left".
-              (view-clear-beam! rows)))
+              (view-clear-beam! 'left rows)))
            ((dropped d)
             (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
            ((hold-swapped) (view-hold-pulse!))

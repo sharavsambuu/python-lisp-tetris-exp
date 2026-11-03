@@ -37,7 +37,10 @@
 (load "policies/gravity")
 (load "rules/pipeline")
 
+(load "domain/duel")
+
 (load "content/campaign")
+(load "content/roster")
 (load "content/locale")
 (load "conductor/profile")
 (load "presentation/view")
@@ -119,7 +122,7 @@
 (tk-check "enter opens the campaign ladder" (screen) 'campaign)
 
 (boot-fresh!)
-(host-tap! "down")               ; the cursor to Free play
+(host-tap! "down") (host-tap! "down")   ; the ladder, Versus, Free play
 (host-tap! "return")
 (tk-check "free play opens the mode list" (screen) 'mode)
 (host-tap! "return")
@@ -140,12 +143,12 @@
 (tk-check "esc on the ladder goes back" (screen) 'title)
 
 (boot-fresh!)
-(host-tap! "down") (host-tap! "return")   ; -> mode
+(host-tap! "down") (host-tap! "down") (host-tap! "return")   ; -> mode
 (host-tap! "escape")
 (tk-check "esc on the mode screen goes back" (screen) 'title)
 
 (boot-fresh!)
-(host-tap! "down") (host-tap! "return") (host-tap! "return")  ; -> level
+(host-tap! "down") (host-tap! "down") (host-tap! "return") (host-tap! "return")  ; -> level
 (host-tap! "escape")
 (tk-check "esc on the level picker goes back" (screen) 'title)
 
@@ -285,7 +288,7 @@
 (tk-section "effects belong to their match")
 
 (boot-into! 'marathon '())
-(view-clear-beam! '(1 2 3 4))     ; the award, by hand: the unit under
+(view-clear-beam! 'left '(1 2 3 4))     ; the award, by hand: the unit under
 (view-flash! '(255 255 0) 300)    ; test is the RESET, not the award
 (tk-assert "the beam is burning" (> *beam-ms* 0))
 (show-screen! 'title (title-menu))        ; leave within the flash window
@@ -370,12 +373,13 @@
 (tk-section "round trip")
 
 (boot-fresh!)
-(host-tap! "down") (host-tap! "return") (host-tap! "return") (host-tap! "return")
+;; The title's rows: the ladder, Versus, Free play — one extra down.
+(host-tap! "down") (host-tap! "down") (host-tap! "return") (host-tap! "return") (host-tap! "return")
 (tk-check "the first match starts" (screen) 'play)
 (play-until-over!)
 (host-tap! "escape")
 (tk-check "esc after game over reaches the title" (screen) 'title)
-(host-tap! "down") (host-tap! "return")
+(host-tap! "down") (host-tap! "down") (host-tap! "return")
 (tk-check "the mode screen reopens" (screen) 'mode)
 (host-tap! "return")
 (tk-check "the level picker reopens" (screen) 'level)

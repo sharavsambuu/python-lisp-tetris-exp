@@ -21,6 +21,7 @@
         (srfi 26)
         (srfi 88)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
+        (tetris duel) (tetris roster)
         (tetris rules) (tetris commands) (tetris locale))
   (begin
     ;; ---------------------------------------------------------------- ;;
@@ -33,12 +34,22 @@
             (cons board-y: 60)
             (cons left-x: 24)
             (cons right-x: 476)
-            (cons panel-w: 140)))
+            (cons panel-w: 140)
+            (cons duel-board-x: 610)
+            (cons duel-panel-x: 896)))
 
     (define (lay k) (cdr (assq k layout)))
 
     (define window-width 640)
     (define window-height 640)
+
+    ;; The duel's window: two full-size wells and their panels do not fit
+    ;; 640 — measured before this layout was committed (§ plan 5a): one
+    ;; full board painted through `draw-rect!` crossings cost ~27ms, so
+    ;; two boards needed the batch painter AND the wider window. The
+    ;; conductor re-opens the window when a duel starts and when it ends;
+    ;; solo play and the menus keep the original 640.
+    (define duel-window-width 1088)
 
     (define colors
       (list (cons i: '(0 200 200))
@@ -130,6 +141,16 @@
     (define *combo-n* 0)
     ;; The result screen's badge: this match beat the session's best.
     (define *new-best* #f)
+    ;; The duel's per-side rails: the right board's clear beam, and the
+    ;; garbage meters — how many rows just landed on each side, and how
+    ;; long the warning still owes. The flash and the shake stay shared:
+    ;; one window, one veil.
+    (define *beam-r-rows* '())
+    (define *beam-r-ms* 0)
+    (define *garbage-l-ms* 0)
+    (define *garbage-l-n* 0)
+    (define *garbage-r-ms* 0)
+    (define *garbage-r-n* 0)
 
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
@@ -155,10 +176,21 @@
 
     ;; The conductor awards a clear: the beam paints the cleared rows for as
     ;; long as the flash burns — one flash length per line, so a tetris's
-    ;; bars outlast a single's.
-    (define (view-clear-beam! rows)
-      (set! *beam-rows* rows)
-      (set! *beam-ms* (+ 120 (* 40 (length rows)))))
+    ;; bars outlast a single's. The duel names the side: each board wears
+    ;; its own beam.
+    (define (view-clear-beam! side rows)
+      (if (eq? side 'right)
+          (begin (set! *beam-r-rows* rows)
+                 (set! *beam-r-ms* (+ 120 (* 40 (length rows)))))
+          (begin (set! *beam-rows* rows)
+                 (set! *beam-ms* (+ 120 (* 40 (length rows)))))))
+
+    ;; Incoming garbage, acknowledged: the meter under the receiving
+    ;; side's well shows the count while it decays.
+    (define (view-garbage! side n)
+      (if (eq? side 'right)
+          (begin (set! *garbage-r-n* n) (set! *garbage-r-ms* 900))
+          (begin (set! *garbage-l-n* n) (set! *garbage-l-ms* 900))))
 
     (define (view-hold-pulse!)
       (set! *hold-pulse-ms* 150))
@@ -175,6 +207,12 @@
       (set! *score-shown* 0)
       (set! *beam-rows* '())
       (set! *beam-ms* 0)
+      (set! *beam-r-rows* '())
+      (set! *beam-r-ms* 0)
+      (set! *garbage-l-ms* 0)
+      (set! *garbage-l-n* 0)
+      (set! *garbage-r-ms* 0)
+      (set! *garbage-r-n* 0)
       (set! *hold-pulse-ms* 0)
       (set! *pop-ms* 0)
       (set! *pop-kind* #f)
@@ -217,6 +255,9 @@
     (define (view-busy? st)
       (or (> *flash-ms* 0)
           (> *beam-ms* 0)
+          (> *beam-r-ms* 0)
+          (> *garbage-l-ms* 0)
+          (> *garbage-r-ms* 0)
           (> *hold-pulse-ms* 0)
           (> *pop-ms* 0)
           (not (= *score-shown* (game-score st)))
@@ -232,6 +273,15 @@
       (if (> *beam-ms* 0)
           (set! *beam-ms* (max 0 (- *beam-ms* dt)))
           (set! *beam-rows* '()))
+      (if (> *beam-r-ms* 0)
+          (set! *beam-r-ms* (max 0 (- *beam-r-ms* dt)))
+          (set! *beam-r-rows* '()))
+      (if (> *garbage-l-ms* 0)
+          (set! *garbage-l-ms* (max 0 (- *garbage-l-ms* dt)))
+          #f)
+      (if (> *garbage-r-ms* 0)
+          (set! *garbage-r-ms* (max 0 (- *garbage-r-ms* dt)))
+          #f)
       (if (> *hold-pulse-ms* 0)
           (set! *hold-pulse-ms* (max 0 (- *hold-pulse-ms* dt)))
           #f)
@@ -276,39 +326,58 @@
     ;;  The pieces of the picture                                        ;;
     ;; ---------------------------------------------------------------- ;;
 
-    (define (draw-cells! cells rgb)
+    (define (draw-cells-at! cells rgb ox)
       (let ((s (cell-size)))
-        (for-each (lambda (p) (draw-rect! (px (car p)) (py (cdr p)) s s rgb))
+        (for-each (lambda (p) (draw-rect! (+ ox (* (car p) (lay cell:)) (shake-offset))
+                                          (py (cdr p)) s s rgb))
                   cells)))
 
-    (define (draw-board! st)
-      ;; The hot path: one call per settled cell per repaint. The layout
-      ;; reads and the shake are hoisted out of the loop — the body is one
-      ;; multiply, two adds, and the seam crossing.
+    (define (draw-cells! cells rgb)
+      (draw-cells-at! cells rgb (lay board-x:)))
+
+    ;; The board, batched: one `draw-rects!` crossing for every settled
+    ;; cell. Measured before the duel's layout was committed — 200 cells
+    ;; as 200 `draw-rect!` crossings cost ~27ms (the crossing overhead,
+    ;; not the paint); batched, ~2ms. The duel doubled the board count,
+    ;; and a two-board worst case at the old rate was an 18fps frame.
+    (define (draw-board-at! st ox)
       (let* ((cell (lay cell:))
              (s (- cell 1))
-             (ox (+ (lay board-x:) (shake-offset)))
              (oy (+ (lay board-y:) (shake-offset))))
-        (for-each
-         (lambda (entry)
-           (let ((pos (car entry)) (name (cdr entry)))
-             (draw-rect! (+ ox (* (car pos) cell))
-                         (+ oy (* (cdr pos) cell))
-                         s s (piece-color name))))
-         (board-cells (game-board st)))))
+        (draw-rects!
+         (let loop ((entries (board-cells (game-board st))) (acc '()))
+           (if (null? entries)
+               (reverse acc)
+               (let* ((e (car entries))
+                      (pos (car e))
+                      (rgb (piece-color (cdr e)))
+                      (x (+ ox (* (car pos) cell) (shake-offset)))
+                      (y (+ oy (* (cdr pos) cell))))
+                 ;; The flat entry, pushed in reverse: (x y w h r g b).
+                 (loop (cdr entries)
+                       (cons (caddr rgb)
+                             (cons (cadr rgb)
+                                   (cons (car rgb)
+                                         (cons s (cons s (cons x (cons y acc))))))))))))))
 
-    (define (draw-well!)
-      (draw-frame! (- (lay board-x:) 2)
+    (define (draw-board! st)
+      (draw-board-at! st (lay board-x:)))
+
+    (define (draw-well-at! ox)
+      (draw-frame! (- ox 2)
                    (- (lay board-y:) 2)
                    (+ (* matrix-width (lay cell:)) 3)
                    (+ (* matrix-height (lay cell:)) 3)
                    (color frame:)))
 
-    (define (draw-ghost! st)
+    (define (draw-well!)
+      (draw-well-at! (lay board-x:)))
+
+    (define (draw-ghost-at! st ox)
       (let ((cells (ghost-cells st)))
         (if (null? cells)
             #f
-            (draw-cells! cells (color ghost:)))))
+            (draw-cells-at! cells (color ghost:) ox))))
 
     ;; A side panel: a dim slab and a label — the one shape the hold slot and
     ;; the queue share.
@@ -511,8 +580,8 @@
     (define (show-ghost! on) (set! *show-ghost* on))
     (define (show-ghost?) *show-ghost*)
 
-    (define (draw-playing-field! st)
-      (draw-well!)
+    (define (draw-playing-field! st ox side)
+      (draw-well-at! ox)
       ;; Danger breathes on the frame: a stack four rows from the ceiling
       ;; pulses the well's border toward warn, faster as the end nears.
       ;; Painting re-arms the repaint gate (see `view-busy?`): the pulse
@@ -520,34 +589,52 @@
       (if (danger-tint? st)
           (begin
             (set! *danger-paint-ms* 66)
-            (draw-frame! (- (lay board-x:) 2) (- (lay board-y:) 2)
+            (draw-frame! (- ox 2) (- (lay board-y:) 2)
                          (+ (* matrix-width (lay cell:)) 3)
                          (+ (* matrix-height (lay cell:)) 3)
                          (mix-rgb (color frame:) (color warn:)
                                   (* 0.5 (+ 1.0 (sin (* 8 *fx-t*)))))))
           #f)
-      (draw-board! st)
+      (draw-board-at! st ox)
       ;; The clear beam: bright bars across the rows the last clear took —
       ;; they decay with the flash, so a tetris burns longer than a single.
-      (if (and (> *beam-ms* 0) (not (null? *beam-rows*)))
-          (let ((w (* matrix-width (lay cell:))))
-            (for-each (lambda (r)
-                        (draw-rect! (lay board-x:) (py r)
-                                    (- w 1) (cell-size) '(235 245 255)))
-                      *beam-rows*))
-          #f)
+      ;; Each side wears its own beam.
+      (let* ((beam-rows (if (eq? side 'right) *beam-r-rows* *beam-rows*))
+             (beam-ms (if (eq? side 'right) *beam-r-ms* *beam-ms*)))
+        (if (and (> beam-ms 0) (not (null? beam-rows)))
+            (let ((w (* matrix-width (lay cell:))))
+              (for-each (lambda (r)
+                          (draw-rect! ox (py r)
+                                      (- w 1) (cell-size) '(235 245 255)))
+                        beam-rows))
+            #f))
       (if (game-active st)
           (begin
-            (if *show-ghost* (draw-ghost! st) #f)
-            (draw-cells! (active-cells st)
-                         (piece-color (falling-name (game-active st)))))
+            (if *show-ghost* (draw-ghost-at! st ox) #f)
+            (draw-cells-at! (active-cells st)
+                            (piece-color (falling-name (game-active st)))
+                            ox))
           #f)
-      ;; The popup, over everything: pops in big during the first fifth of
-      ;; its life, then fades toward the veil's dark. The combo's type
-      ;; escalates with the run — a five-link combo shouts larger than a
-      ;; two — so the size itself reads how deep the run is; the b2b chain
-      ;; wears its own color at its own size.
-      (if (> *pop-ms* 0)
+      ;; The garbage meter, under the well: what just landed on this side,
+      ;; while the warning burns.
+      (let* ((g-ms (if (eq? side 'right) *garbage-r-ms* *garbage-l-ms*))
+             (g-n (if (eq? side 'right) *garbage-r-n* *garbage-l-n*)))
+        (if (and (> g-ms 0) (> g-n 0))
+            (draw-text-fit! ox
+                            (+ (lay board-y:) (* matrix-height (lay cell:)) 12)
+                            (tr-fmt 'hud-garbage g-n)
+                            20 (color warn:)
+                            (- duel-window-width ox 8))
+            #f))
+      ;; The popup, over everything — the PLAYER's runs only: one
+      ;; headline per side, and the opponent's combos read through their
+      ;; beam and the garbage they send, not through text over their
+      ;; well. Pops in big during the first fifth of its life, then fades
+      ;; toward the veil's dark. The combo's type escalates with the run
+      ;; — a five-link combo shouts larger than a two — so the size
+      ;; itself reads how deep the run is; the b2b chain wears its own
+      ;; color at its own size.
+      (if (and (eq? side 'left) (> *pop-ms* 0))
           (let* ((total (if (eq? *pop-kind* 'b2b)
                             1100
                             (+ *combo-pop-ms* (* 100 (min 4 (- *combo-n* 1))))))
@@ -584,14 +671,14 @@
                 (list "" 12)
                 (list (tr 'overlay-return-start) 22))))
         ((paused)
-         (draw-playing-field! st)
+         (draw-playing-field! st (lay board-x:) 'left)
          (draw-overlay!
           (list (list (tr 'overlay-paused) 34)
                 (list (tr 'overlay-p-resume) 20)
                 (list (tr 'overlay-r-restart) 20)
                 (list (tr 'overlay-esc-menu) 20))))
         ((won)
-         (draw-playing-field! st)
+         (draw-playing-field! st (lay board-x:) 'left)
          (draw-overlay!
           (append (list (list (tr 'overlay-level-clear) 34)
                         (list (tr-fmt 'overlay-score (game-score st)) 22))
@@ -602,7 +689,7 @@
                         (list (tr 'overlay-r-replay) 20)
                         (list (tr 'overlay-esc-menu) 20)))))
         ((over)
-         (draw-playing-field! st)
+         (draw-playing-field! st (lay board-x:) 'left)
          (draw-overlay!
           (append (list (list (tr 'overlay-game-over) 34)
                         (list (tr-fmt 'overlay-score (game-score st)) 22)
@@ -613,7 +700,79 @@
                   (list (list (tr 'overlay-r-again) 20)
                         (list (tr 'overlay-esc-menu) 20)))))
         ((playing)
-         (draw-playing-field! st)))
+         (draw-playing-field! st (lay board-x:) 'left)))
+      (apply-fx!)
+      (present!))
+
+    ;; ---------------------------------------------------------------- ;;
+    ;;  The duel — two wells, one fight, on one window                    ;;
+    ;; ---------------------------------------------------------------- ;;
+    ;;
+    ;; The left board is the player's: hold, stats, keys, the popup — the
+    ;; whole solo picture, at the solo origin. The right board is the
+    ;; persona's: a next-only panel (the AI does not hold), a name plate
+    ;; so the fight has a face, and the same field at the duel origin.
+    ;; The rails are per side (beam, meter); the flash and the shake are
+    ;; the window's — one veil, one thud.
+
+    (define (draw-opponent! st persona)
+      (let* ((ox (lay duel-board-x:))
+             (px (lay duel-panel-x:)))
+        (draw-panel! px "NEXT")
+        (let ((cx (+ px (quotient (lay panel-w:) 2))))
+          (let loop ((names (bag-peek (game-bag st) 3)) (i 0))
+            (if (null? names)
+                #f
+                (begin
+                  (draw-preview! (car names)
+                                 cx
+                                 (+ 80 (* i 52))
+                                 preview-mini-next
+                                 (piece-color (car names)))
+                  (loop (cdr names) (+ i 1))))))
+        ;; The name plate: who you are fighting, and their line count —
+        ;; the one number a duel reads at a glance.
+        (draw-text-fit! ox 26
+                        (persona-name persona)
+                        22 (color accent:)
+                        (- duel-window-width ox 8))
+        (draw-text-fit! ox 268
+                        (tr-fmt 'hud-lines (game-lines st))
+                        18 (color dim:)
+                        (- duel-window-width ox 8))
+        (draw-playing-field! st ox 'right)))
+
+    (define (draw-duel! duel persona)
+      (clear-screen! (color bg:))
+      (let ((l (duel-left duel)))
+        (draw-hold! l)
+        (draw-stats! l)
+        (draw-hint! l)
+        (draw-playing-field! l (lay board-x:) 'left))
+      (draw-opponent! (duel-right duel) persona)
+      (variant-match (game-phase (duel-left duel))
+        ((paused)
+         (draw-overlay!
+          (list (list (tr 'overlay-paused) 34)
+                (list (tr 'overlay-p-resume) 20)
+                (list (tr 'overlay-esc-forfeit) 20))))
+        (else
+         (if (duel-over? duel)
+             (let* ((won (eq? (duel-winner duel) 'left))
+                    (headline (if won
+                                  (tr 'overlay-duel-won)
+                                  (tr-fmt 'overlay-duel-lost
+                                          (persona-name persona)))))
+               (draw-overlay!
+                (append (list (list headline 34)
+                              (list (tr-fmt 'overlay-score
+                                            (game-score (duel-left duel)))
+                                    22)
+                              (list (tr-fmt 'overlay-lines
+                                            (game-lines (duel-left duel)))
+                                    22))
+                        (list (list (tr 'overlay-return-menu) 20)))))
+             #f)))
       (apply-fx!)
       (present!))
 )

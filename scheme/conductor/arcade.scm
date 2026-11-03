@@ -34,6 +34,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
+        (tetris duel) (tetris roster)
         (tetris plan) (tetris telemetry) (tetris director) (tetris campaign) (tetris locale)
         (tetris commands) (tetris gravity) (tetris rules))
   (begin
@@ -162,6 +163,189 @@
                 (list-ref levels (- next 1))
                 #f))
           #f))
+
+    ;; ---------------------------------------------------------------- ;;
+    ;;  The duel — the human's side and a persona's, one fight            ;;
+    ;; ---------------------------------------------------------------- ;;
+    ;;
+    ;; The player is the left match; the persona drives the right through
+    ;; the same one-ply search the solo AI runs (one AI at a time, so the
+    ;; search state is shared; the weights, the placement budget — the
+    ;; persona's speed knob — and the lock counter travel with the side).
+    ;; The window re-opens wide for the fight and back for everything
+    ;; else: two full-size wells do not fit 640, and the menus keep their
+    ;; proven layout.
+
+    (define *duel* #f)
+    (define *persona* #f)
+    (define *duel-paused* #f)
+
+    (define (start-duel! persona)
+      (guard (e (#t
+                 (show-screen! 'title (title-menu))
+                 (display "duel refused: ")
+                 (display (describe-condition e))
+                 (newline)))
+        (set! *persona* persona)
+        (set! *duel* (make-duel
+                      (fresh-game seed: (or *seed* (new-seed))
+                                  mode: 'marathon options: '())
+                      (fresh-game seed: (new-seed)
+                                  mode: 'marathon options: '())))
+        (set! *r-lock-count* 0)
+        (set! *duel-paused* #f)
+        (set! *settled* #f)
+        (set! *screen* 'duel)
+        (set! *dirty* #t)
+        (reset-ai!)
+        (view-reset!)
+        (open-window! duel-window-width window-height "Scheme Tetris — duel")
+        (sfx! "start")))
+
+    (define (close-duel!)
+      (set! *duel* #f)
+      (set! *persona* #f)
+      (open-window! window-width window-height "Scheme Tetris — shs DSL")
+      (show-screen! 'title (title-menu)))
+
+    ;; The player's keys, minus the ones the duel answers itself (the
+    ;; pause, the quit): everything else is the left match's steering.
+    (define (duel-events st evs)
+      (apply-events st
+                    (srfi-1:filter
+                     (lambda (ev)
+                       (let ((type (cadr (assq type: ev))))
+                         (case type
+                           ((quit) #f)
+                           ((key-down)
+                            (let ((k (cadr (assq key: ev))))
+                              (not (or (string=? k "escape")
+                                       (string=? k "p")))))
+                           (else #t))))
+                     evs)))
+
+    (define (duel-key! key)
+      (cond ((and (not (duel-over? *duel*)) *duel-paused*)
+             (cond ((string=? key "p")
+                    (set! *duel-paused* #f)
+                    (set! *dirty* #t)
+                    (sfx! "pause"))
+                   ;; A forfeit is a loss: the fight happened, and the
+                   ;; record keeps it. Force the left side's top-out, let
+                   ;; the exchange decide, settle, leave.
+                   ((string=? key "escape")
+                    (set! *duel*
+                          (duel-with-left *duel*
+                            (game-with (duel-left *duel*) phase: (over))))
+                    (set! *duel* (duel-exchange *duel*))
+                    (settle-duel!)
+                    (close-duel!))
+                   ((string=? key "q") (quit!))
+                   (else #f)))
+            ((duel-over? *duel*)
+             (cond ((or (string=? key "return") (string=? key "escape"))
+                    (close-duel!)
+                    (sfx! "menu-select"))
+                   ((string=? key "q") (quit!))
+                   (else #f)))
+            (else
+             (cond ((or (string=? key "escape") (string=? key "p"))
+                    (set! *duel-paused* #t)
+                    (set! *dirty* #t)
+                    (sfx! "pause"))
+                   ((string=? key "q") (quit!))
+                   (else #f)))))
+
+    ;; A decided duel writes its record once: the per-persona tally in the
+    ;; profile, the ladder's advance on a win over the rung it points at,
+    ;; and the result sound. The ladder is strict — the roster's order is
+    ;; the order you face them.
+    (define (settle-duel!)
+      (set! *settled* #t)
+      (set! *dirty* #t)
+      (let ((won (eq? (duel-winner *duel*) 'left)))
+        (if *profile*
+            (let* ((id (symbol->string (persona-id *persona*)))
+                   (records (profile-ref *profile* "records" '()))
+                   (entry (assoc id records))
+                   (old (if entry (cdr entry) '()))
+                   (wins (profile-ref old "wins" 0))
+                   (losses (profile-ref old "losses" 0))
+                   (margin (profile-ref old "margin" 0))
+                   (diff (- (game-lines (duel-left *duel*))
+                            (game-lines (duel-right *duel*))))
+                   (ladder (profile-ref *profile* "ladder" 0))
+                   (rank (let loop ((ls (persona-ids)) (i 0))
+                           (cond ((null? ls) 0)
+                                 ((eq? (car ls) (persona-id *persona*)) i)
+                                 (else (loop (cdr ls) (+ i 1)))))))
+              (set! *profile*
+                    (profile-set *profile* "records"
+                                 (cons (cons id
+                                             (list (cons "wins"
+                                                         (if won (+ wins 1) wins))
+                                                   (cons "losses"
+                                                         (if won losses (+ losses 1)))
+                                                   (cons "margin"
+                                                         (if won (max margin diff) margin))))
+                                       (srfi-1:filter
+                                        (lambda (e) (not (equal? (car e) id)))
+                                        records))))
+              (if (and won (= rank ladder) (< ladder (length (persona-ids))))
+                  (set! *profile* (profile-set *profile* "ladder" (+ ladder 1)))
+                  #f)
+              (profile-save!))
+            #f)
+        (sfx! (if won "victory" "over"))))
+
+    (define (duel-frame)
+      (let* ((dt (tick!))
+             (evs (poll-events!)))
+        (view-fx-step! dt (duel-left *duel*))
+        (let loop ((rest evs))
+          (if (null? rest)
+              #f
+              (let ((type (cadr (assq type: (car rest)))))
+                (case type
+                  ((quit) (quit!))
+                  ((key-down)
+                   (duel-key! (cadr (assq key: (car rest)))))
+                  (else #f))
+                (loop (cdr rest)))))
+        (if (and (not *duel-paused*) (not (duel-over? *duel*)))
+            (begin
+              ;; The player's keys land before this frame's gravity; the
+              ;; persona's AI takes its one step; then the world moves —
+              ;; both sides, whole dt, one exchange.
+              (set! *duel*
+                    (duel-with-left *duel*
+                      (duel-events (duel-left *duel*) evs)))
+              (if (phase-playing? (duel-right *duel*))
+                  (set! *duel*
+                        (duel-with-right *duel*
+                          (ai-step-match! (duel-right *duel*)
+                                          (persona-weights *persona*)
+                                          (persona-speed *persona*)
+                                          *r-lock-count*)))
+                  #f)
+              ;; The edge reads the journals BEFORE the exchange drains
+              ;; them: each fact awards once, on the side that earned it.
+              (duel-award! 'left (reverse (game-journal (duel-left *duel*))))
+              (duel-award! 'right (reverse (game-journal (duel-right *duel*))))
+              (set! *duel* (duel-step *duel* dt)))
+            #f)
+        ;; Settle once, whatever route the terminal state arrived by: it
+        ;; can land inside the frame above, or already sit decided at
+        ;; frame entry — a route that must not skip the record.
+        (if (and (duel-over? *duel*) (not *settled*))
+            (settle-duel!)
+            #f)
+        (if (or *dirty* (view-busy? (duel-left *duel*)))
+            (begin
+              (draw-duel! *duel* *persona*)
+              (set! *dirty* #f))
+            #f)))
+
     ;; ---------------------------------------------------------------- ;;
     ;;  The AI — plan (frame-budgeted), then steer one step                ;;
     ;; ---------------------------------------------------------------- ;;
@@ -196,8 +380,9 @@
       (set! *search-rows* 20)
       (set! *search-shapes* #f))
 
-    (define (best-placement st ws)
-      (let ((key (piece-key st)))
+    (define (best-placement st ws budget locks)
+      (let ((key (list locks
+                       (if (game-active st) (falling-name (game-active st)) #f))))
         (when (not (equal? key *search-key*))
           (set! *search-i* 0)
           (set! *search-bx* 3)
@@ -215,7 +400,7 @@
           (cond ((>= i 40)
                  (set! *search-i* i)
                  (list *search-bx* *search-brot*))
-                ((>= scored *best-per-frame*)
+                ((>= scored budget)
                  (set! *search-i* i)
                  'pending)
                 (else
@@ -241,47 +426,50 @@
     (define *plan-x* 3)
     (define *plan-rot* 0)
     (define *lock-count* 0)   ;; edge-side counter, fed by the journal
+    (define *r-lock-count* 0) ;; the duel's right side keeps its own
 
-    (define (piece-key st)
-      ;; The identity of the piece a plan belongs to: the lock count *and*
-      ;; the kind. A count alone is not enough: a hold swaps the active
-      ;; piece without locking one, so the key would stay the same and the
-      ;; plan would steer the new piece with the old piece's shape.
-      (list *lock-count*
-            (if (game-active st) (falling-name (game-active st)) #f)))
-
-    (define (steer-to! st x rot)
+    (define (steer-to st x rot)
       (let* ((p (game-active st))
              (px (falling-x p)))
         (cond ((not (= (falling-rot p) rot))
                (let ((r (apply-command st (rotate-cw))))
-                 (if (result-ok? r) (set! *st* (ok-value r)) (ai-drop! st))))
+                 (if (result-ok? r) (ok-value r) (ai-drop st))))
               ((< px x)
                (let ((r (apply-command st (right))))
-                 (if (result-ok? r) (set! *st* (ok-value r)) (ai-drop! st))))
+                 (if (result-ok? r) (ok-value r) (ai-drop st))))
               ((> px x)
                (let ((r (apply-command st (left))))
-                 (if (result-ok? r) (set! *st* (ok-value r)) (ai-drop! st))))
-              (else (ai-drop! st)))))
+                 (if (result-ok? r) (ok-value r) (ai-drop st))))
+              (else (ai-drop st)))))
 
-    (define (ai-drop! st)
+    (define (ai-drop st)
       (let ((r (apply-command st (hard-drop))))
-        (if (result-ok? r) (set! *st* (ok-value r)) #f)))
+        (if (result-ok? r) (ok-value r) st)))
+
+    ;; One AI step against an ARBITRARY match, answering the new match:
+    ;; the solo path drives the player's board, the duel drives the
+    ;; persona's. One AI runs at a time — the player is human in a duel —
+    ;; so the search state above stays shared; the lock count and the
+    ;; weights and the placement budget travel with the side.
+    (define (ai-step-match! st ws budget locks)
+      (let ((key (list locks
+                       (if (game-active st) (falling-name (game-active st)) #f))))
+        (when (not (equal? key *plan-key*))
+          (set! *plan-key* key)
+          (set! *plan-ready* #f))
+        (when (not *plan-ready*)
+          (let ((plan (best-placement st ws budget locks)))
+            (when (not (eq? plan 'pending))
+              (set! *plan-x* (car plan))
+              (set! *plan-rot* (cadr plan))
+              (set! *plan-ready* #t))))
+        (if *plan-ready*
+            (steer-to st *plan-x* *plan-rot*)
+            st)))
 
     (define (ai-step!)
       (when (and *ai* (phase-playing? *st*) (game-active *st*))
-        (let ((key (piece-key *st*)))
-          (when (not (equal? key *plan-key*))
-            (set! *plan-key* key)
-            (set! *plan-ready* #f))
-          (when (not *plan-ready*)
-            (let ((plan (best-placement *st* *weights*)))
-              (when (not (eq? plan 'pending))
-                (set! *plan-x* (car plan))
-                (set! *plan-rot* (cadr plan))
-                (set! *plan-ready* #t))))
-          (when *plan-ready*
-            (steer-to! *st* *plan-x* *plan-rot*)))))
+        (set! *st* (ai-step-match! *st* *weights* *best-per-frame* *lock-count*))))
     ;; One director step: read the pressure, ask the core for a pace, and
     ;; speak only when there is something to say — a change past the
     ;; threshold, after the cooldown. The decision is journaled like any
@@ -448,9 +636,9 @@
             #f)))
 
     (define (arcade-step!)
-      (if (eq? *screen* 'play)
-          (play-step!)
-          (menu-step!)))
+      (cond ((eq? *screen* 'play) (play-step!))
+            ((eq? *screen* 'duel) (duel-frame))
+            (else (menu-step!))))
 
     (define (arcade-main)
       (open-window! window-width window-height "Scheme Tetris — shs DSL")
@@ -481,12 +669,23 @@
               (ai (opt 'ai))
               (director (opt 'director))
               (autostart (opt 'autostart))
-              (locale (opt 'locale)))
+              (locale (opt 'locale))
+              (duel (opt 'duel)))
           (if seed (set! *seed* seed) #f)
           (if ai (set! *ai* #t) #f)
           (if director (set! *director* #t) #f)
           (if locale (set-locale! (string->symbol locale)) #f)
-          (cond ((and autostart mode)
+          (cond (duel
+                 ;; A --duel persona name boots straight into the fight.
+                 (let ((p (persona-by-id (string->symbol duel))))
+                   (if p
+                       (start-duel! p)
+                       (begin
+                         (display "unknown persona: ")
+                         (display duel)
+                         (newline)
+                         (show-screen! 'title (title-menu))))))
+                ((and autostart mode)
                  (set! *mode* (string->symbol mode))
                  (set! *level* (or level 1))
                  (start-match! *mode*

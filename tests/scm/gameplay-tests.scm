@@ -25,7 +25,10 @@
 (load "policies/gravity")
 (load "rules/pipeline")
 
+(load "domain/duel")
+
 (load "content/campaign")
+(load "content/roster")
 (load "content/locale")
 (load "conductor/profile")
 (load "presentation/view")
@@ -55,7 +58,7 @@
         (srfi 88)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris plan)
-        (tetris game)
+        (tetris game) (tetris duel) (tetris roster)
         (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity)
         (tetris rules)
         (tetris campaign))
@@ -582,6 +585,79 @@
 (tk-check "the newer document was not touched"
           *host-profile*
           (list (cons "version" 2) (cons "bests" '())))
+
+;; --------------------------------------------------------------------- ;;
+;;  the duel — the human's side and a persona's, through the real loop     ;;
+;; --------------------------------------------------------------------- ;;
+
+(tk-section "the duel")
+
+(boot-fresh!)
+(show-screen! 'versus (versus-menu))
+(tk-check "the versus screen is on" (screen) 'versus)
+(tk-check "the persona menu lists the roster"
+          (menu-count *menu*) (length (persona-ids)))
+(start-duel! (persona-by-id 'wall))
+(tk-check "the duel screen is on" (screen) 'duel)
+(tk-assert "both sides are live"
+           (and (phase-playing? (duel-left *duel*))
+                (phase-playing? (duel-right *duel*))))
+
+;; The persona's AI plays its side: pieces locked, on its own lock
+;; counter, while the human's side idles. A duel runs two matches and
+;; the exchange every frame — the live walk is short by design; the
+;; settle paths below are forced, so the suite never pays for a full
+;; AI-vs-idle marathon (measured: the Wall's own gravity ramp, not the
+;; idle stack, ends that game first).
+(host-run-frames! 400)
+(tk-assert "the persona's AI locks pieces on its side" (> *r-lock-count* 0))
+(tk-assert "both sides still in the fight" (not (duel-over? *duel*)))
+
+;; A loss: the left side tops out, the record keeps it, the ladder
+;; does not move.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-left *duel*
+        (game-with (duel-left *duel*) phase: (over))))
+(set! *duel* (duel-exchange *duel*))
+(tk-check "the left side's top-out lost the fight" (duel-winner *duel*) 'right)
+(host-run-frames! 3)
+(tk-check "the loss is on the record"
+          (profile-ref (cdr (assoc "wall" (profile-ref *profile* "records" '())))
+                       "losses" 0)
+          1)
+(tk-check "a loss does not move the ladder"
+          (profile-ref *profile* "ladder" 0) 0)
+
+;; A win: the right side tops out, the ladder advances.
+(start-duel! (persona-by-id 'wall))
+(set! *duel*
+      (duel-with-right *duel*
+        (game-with (duel-right *duel*) phase: (over))))
+(set! *duel* (duel-exchange *duel*))
+(tk-check "the right side's top-out lost the fight" (duel-winner *duel*) 'left)
+(host-run-frames! 3)
+(tk-check "the ladder advanced" (profile-ref *profile* "ladder" 0) 1)
+(tk-check "the win is on the record"
+          (profile-ref (cdr (assoc "wall" (profile-ref *profile* "records" '())))
+                       "wins" 0)
+          1)
+
+;; The ladder's gate: a persona past the next rung refuses, loudly.
+(show-screen! 'versus (versus-menu))
+(set! *menu* (menu-set (versus-menu) 2))   ; The Scholar, two rungs up
+(choose!)
+(tk-check "a locked persona refuses" (screen) 'versus)
+(tk-check "the lock kept the ladder" (profile-ref *profile* "ladder" 0) 1)
+
+;; And the next rung accepts: the fight the ladder promised.
+(set! *menu* (menu-set (versus-menu) 1))   ; Blitz, the new rung
+(choose!)
+(tk-check "the next rung accepts the challenge" (screen) 'duel)
+(tk-check "the opponent is the rung's persona"
+          (persona-id *persona*) 'blitz)
+(close-duel!)
+(tk-check "leaving the duel lands on the title" (screen) 'title)
 
 (tk-report! "gameplay")
 

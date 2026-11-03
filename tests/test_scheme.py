@@ -96,7 +96,7 @@ def test_domain_modules_are_pure_r7rs_libraries():
     base), the SRFIs, each other, and (tetris result) — never a painter or a
     speaker. If someone wires the host into the domain, this goes red.
     """
-    forbidden = ("draw-rect", "draw-frame", "draw-text", "clear-screen",
+    forbidden = ("draw-rect", "draw-rects", "draw-frame", "draw-text", "clear-screen",
                  "sfx!", "open-window!", "tick!", "poll-events!",
                  "present!", "held?", "quit!", "tint!", "boot-config",
                  "read-profile", "write-profile!")
@@ -139,3 +139,29 @@ def test_painter_keeps_up_with_a_full_board():
     assert per_call_ms < 100, (
         f"draw-board! on a full board takes {per_call_ms:.0f} ms — the "
         "painter is burning its budget in the inner loop again")
+
+
+@pytest.mark.slow
+def test_duel_painter_keeps_up_with_two_full_boards():
+    """The two-board worst frame — the number that decided stage 5's layout.
+
+    Measured before the layout was committed: one full board through
+    per-cell `draw-rect!` crossings cost ~27ms, so two boards were an
+    18fps worst case and the batch painter (`draw-rects!`, one seam
+    crossing per board) earned its place on the seam. This pin stays far
+    above the batched number and far above the per-cell regression.
+    """
+    import time
+
+    lisp.evaluator.STEPS_BUDGET = 200_000_000
+    env = make_env(search_paths=[SCHEME, TESTS])
+    load_lisp(env, TESTS / "bench-view.scm")
+
+    run("(draw-duel! *duel* *persona*)", env)  # warm
+    t0 = time.perf_counter()
+    for _ in range(5):
+        run("(draw-duel! *duel* *persona*)", env)
+    per_call_ms = (time.perf_counter() - t0) / 5 * 1000
+    assert per_call_ms < 60, (
+        f"draw-duel! on two full boards takes {per_call_ms:.0f} ms — the "
+        "two-board worst case cannot hold the frame rate")

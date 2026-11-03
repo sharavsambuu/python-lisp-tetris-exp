@@ -24,14 +24,14 @@ collects the debt: the entire game runs headless in pure Scheme, against a
 
 ## 9.1 The host, as data
 
-`tests/scm/fake-host.scm` defines all eighteen host primitives in Scheme,
+`tests/scm/fake-host.scm` defines all nineteen host primitives in Scheme,
 shadowing the Python ones the pytest harness installed:
 
 ```scheme
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
 ;;; The edge modules (presentation/view, the conductor files) speak to
-;;; eighteen host primitives. This file DEFINES ALL EIGHTEEN in Scheme, shadowing the
+;;; nineteen host primitives. This file DEFINES ALL NINETEEN in Scheme, shadowing the
 ;;; Python ones the pytest harness installed, so the whole arcade loop runs
 ;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
 ;;; call is recorded in `*host-log*`, so UI behavior is asserted against a
@@ -314,7 +314,7 @@ def test_gameplay_behavior():
 
 The harness's job is minimal — build an environment with the search paths,
 load the file, and let `tk-report!`'s raise be the pass/fail. It installs
-*nothing*: the fake host defines all eighteen primitives in Scheme, so the
+*nothing*: the fake host defines all nineteen primitives in Scheme, so the
 suites never see a Python-installed name. The *content* of testing lives in
 Scheme, next to the code it tests. Keep it that way: a test suite split
 across two languages ages badly unless the Python side is dumb glue.

@@ -177,9 +177,11 @@
       (case *screen*
         ((title) (menu-key! key))
         ((campaign) (menu-key! key))
+        ((versus) (menu-key! key))
         ((mode) (menu-key! key))
         ((level) (menu-key-with-level! key))
         ((play) (play-key! key))
+        ((duel) (duel-key! key))
         (else #f)))
 
     ;; The host pumps key-repeat for held keys; the menus honor it for the
@@ -187,7 +189,7 @@
     ;; and a held ESC must not fly back through every screen at once.
     (define (dispatch-repeat! key)
       (case *screen*
-        ((title campaign mode)
+        ((title campaign versus mode)
          (if (or (string=? key "up") (string=? key "down"))
              (menu-key! key)
              #f))

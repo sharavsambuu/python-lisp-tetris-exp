@@ -24,7 +24,8 @@
         (srfi 88)
         (tetris campaign)
         (tetris locale)
-        (tetris modes))
+        (tetris modes)
+        (tetris roster))
 
 (begin
     (define (->text v)
@@ -146,7 +147,8 @@
                                     ")")
                      (cons 'campaign c)))
              (campaigns))
-        (list (list (tr 'menu-free-play) '(free-play))
+        (list (list (tr 'menu-versus) '(versus))
+              (list (tr 'menu-free-play) '(free-play))
               (list (string-append (tr 'menu-language)
                                    ": "
                                    (locale-label (current-locale)))
@@ -167,6 +169,40 @@
                       (cons 'challenge ch))))
             (campaign-levels camp)
             (iota (length (campaign-levels camp)) 1))))
+
+    ;; The versus ladder: the roster, in order, its position read from the
+    ;; profile. Strict sequential — the accomplishment needs a gate — so
+    ;; personas past the next rung wear the lock mark, and the beaten ones
+    ;; wear their record.
+    (define (ladder-rank)
+      (profile-ref *profile* "ladder" 0))
+
+    (define (versus-menu)
+      (make-menu
+       (let loop ((ps roster) (i 0) (acc '()))
+         (if (null? ps)
+             (reverse acc)
+             (let* ((p (car ps))
+                    (locked (> i (ladder-rank)))
+                    (rec (let ((e (assoc (symbol->string (persona-id p))
+                                         (profile-ref *profile* "records" '()))))
+                           (if e (cdr e) '())))
+                    (wins (profile-ref rec "wins" 0))
+                    (losses (profile-ref rec "losses" 0))
+                    (label (string-append
+                            (persona-name p)
+                            " — "
+                            (persona-title p)
+                            (cond (locked (tr 'menu-locked))
+                                  ((> (+ wins losses) 0)
+                                   (string-append "  ("
+                                                  (number->string wins)
+                                                  "/"
+                                                  (number->string losses)
+                                                  ")"))
+                                  (else "")))))
+               (loop (cdr ps) (+ i 1)
+                     (cons (list label (cons 'persona p)) acc)))))))
 
     ;; Free play: the four ways to play, in the locale's spelling, with the
     ;; session's best beside the one that has one. The values are the mode
@@ -219,6 +255,8 @@
                                       (tr 'hint-esc-back))))
         ((mode)
          (menu-overlay *menu* (tr 'title-free-play) (tr 'hint-mode)))
+        ((versus)
+         (menu-overlay *menu* (tr 'title-versus) (tr 'hint-versus)))
         ((level)
          (menu-overlay *menu*
                        (string-append (tr 'title-starting-level)
@@ -278,6 +316,18 @@
                            'campaign ch
                            (level-key (campaign-id *campaign*) (+ idx 1))
                            (+ idx 1))))
+          ((versus) (show-screen! 'versus (versus-menu)) (sfx! "menu-select"))
+          ((persona)
+           ;; The ladder's gate: a persona past the next rung refuses —
+           ;; the lock mark said so, the denied blip says it again.
+           (let* ((p (cdr sel))
+                  (rank (let loop ((ls (persona-ids)) (i 0))
+                          (cond ((null? ls) 0)
+                                ((eq? (car ls) (persona-id p)) i)
+                                (else (loop (cdr ls) (+ i 1)))))))
+             (if (<= rank (ladder-rank))
+                 (start-duel! p)
+                 (begin (sfx! "denied") (set! *dirty* #t)))))
           ((free-play) (show-screen! 'mode (mode-menu)) (sfx! "menu-select"))
           ((language)
            ;; The setting IS the entry: RETURN cycles the locale, the menu

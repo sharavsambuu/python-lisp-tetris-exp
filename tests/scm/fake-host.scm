@@ -1,7 +1,7 @@
 ;;; tests/scm/fake-host.scm — the host, as data.
 ;;;
 ;;; The edge modules (presentation/view, the conductor files) speak to
-;;; eighteen host primitives. This file DEFINES ALL EIGHTEEN in Scheme, shadowing the
+;;; nineteen host primitives. This file DEFINES ALL NINETEEN in Scheme, shadowing the
 ;;; Python ones the pytest harness installed, so the whole arcade loop runs
 ;;; in pure Scheme: no pygame, no SDL dummy driver, no seam. Every painter
 ;;; call is recorded in `*host-log*`, so UI behavior is asserted against a
@@ -55,7 +55,7 @@
   (set! *host-log* (cons (cons op args) *host-log*)))
 
 ;; --------------------------------------------------------------------- ;;
-;;  The eighteen primitives                                                ;;
+;;  The nineteen primitives                                                ;;
 ;; --------------------------------------------------------------------- ;;
 
 (define (open-window! w h title)
@@ -65,6 +65,12 @@
 (define (clear-screen! rgb) (host-log! 'clear rgb))
 
 (define (draw-rect! x y w h rgb) (host-log! 'rect x y w h rgb))
+
+(define (draw-rects! flat)
+  ;; One crossing, many rectangles: the board's hot path. The log
+  ;; carries the COUNT — board cells are asserted by count or by
+  ;; pixel-sampling against the real host, never one by one.
+  (host-log! 'rects (quotient (length flat) 7)))
 
 (define (draw-frame! x y w h rgb) (host-log! 'frame x y w h rgb))
 

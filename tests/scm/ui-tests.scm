@@ -24,7 +24,10 @@
 (load "policies/gravity")
 (load "rules/pipeline")
 
+(load "domain/duel")
+
 (load "content/campaign")
+(load "content/roster")
 (load "content/locale")
 (load "conductor/profile")
 (load "presentation/view")
@@ -121,6 +124,9 @@
 ;; cycles to Mongolian and the next repaint speaks it. A second RETURN
 ;; cycles back — the setting is a two-way door. A fresh boot afterwards
 ;; puts the cursor back where the later sections expect it.
+;; The title's rows: the ladder, VERSUS, free play, language, quit — the
+;; language row is two downs past the ladder now.
+(host-type! "down")
 (host-type! "down")
 (host-type! "down")
 (host-type! "return")
@@ -139,6 +145,7 @@
 (tk-assert "the mongolian HUD's painter calls fit"
            (every host-fits-window? *host-log*))
 (boot-fresh!)
+(host-type! "down")
 (host-type! "down")
 (host-type! "down")
 (host-type! "return")
@@ -388,7 +395,8 @@
 (host-type! "escape")
 (host-type! "escape")
 (tk-check "two escapes land on the title" (screen) 'title)
-(host-type! "down")                   ; Free play
+(host-type! "down")                   ; the ladder, Versus, then Free play
+(host-type! "down")
 (host-type! "return")
 (tk-check "free play opens the mode list" (screen) 'mode)
 (tk-assert "the mode list names the ways to play"

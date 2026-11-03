@@ -128,6 +128,8 @@ BEEP_SPECS = {
     "combo-3": (660, 0.11, 0.5),
     "combo-4": (740, 0.12, 0.55),
     "combo-5": (830, 0.14, 0.6),
+    "garbage-warn": (98, 0.18, 0.5),
+    "thud": (70, 0.1, 0.6),
     "drop": (110, 0.08, 0.5),
     "hold": (392, 0.05, 0.4),
     "soft-drop": (260, 0.025, 0.3),
@@ -273,6 +275,7 @@ class PygameHost:
                  mode: str | None = None, level: int | None = None,
                  seed: int | None = None, ai: bool = False,
                  director: bool = False, locale: str | None = None,
+                 duel: str | None = None,
                  profile_path: str | None = None) -> None:
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -290,6 +293,7 @@ class PygameHost:
         self.ai = ai
         self.director = director
         self.locale = locale
+        self.duel = duel
         self._frames = 0
         self._quit_seen = False
         self._sounds: dict[str, pygame.mixer.Sound] = {}
@@ -456,6 +460,8 @@ class PygameHost:
             pairs.append(pair("ai", True))
         if self.director:
             pairs.append(pair("director", True))
+        if self.duel:
+            pairs.append(pair("duel", self.duel))
         if self.autostart:
             pairs.append(pair("autostart", True))
         if self.locale:
@@ -545,6 +551,33 @@ class PygameHost:
             tuple(int(c) for c in rgb),
             pygame.Rect(int(x), int(y), int(w), int(h)),
         )
+
+    def draw_rects(self, flat) -> None:
+        """A batch of rectangles, one seam crossing for all of them.
+
+        ``flat`` is one proper list of numbers — (x y w h r g b) per
+        rectangle, flattened. The board is the hot path that earned this
+        primitive: measured, 200 settled cells cost ~27ms as 200
+        ``draw-rect!`` crossings (the crossing overhead, not the paint —
+        pygame itself draws the 200 in under a millisecond), and a
+        two-board duel at that rate is an 18fps worst case. Batched, the
+        interpreter builds one list and crosses once; the paint loop
+        below is plain Python. A malformed list (a length that is not a
+        multiple of 7, a non-number) kills the batch, not the frame.
+        """
+        surface = self._require_display()
+        from lisp.types import NIL
+        if flat is NIL or flat is None:
+            return  # an empty board crosses as the empty list
+        try:
+            values = [int(v) for v in flat]
+        except TypeError:
+            return
+        if len(values) % 7 != 0:
+            return
+        for i in range(0, len(values), 7):
+            x, y, w, h, r, g, b = values[i:i + 7]
+            pygame.draw.rect(surface, (r, g, b), pygame.Rect(x, y, w, h))
 
     def draw_frame(self, x, y, w, h, rgb) -> None:
         pygame.draw.rect(
@@ -656,6 +689,7 @@ class PygameHost:
             ("open-window!", self.open_window),
             ("clear-screen!", self.clear_screen),
             ("draw-rect!", self.draw_rect),
+            ("draw-rects!", self.draw_rects),
             ("draw-frame!", self.draw_frame),
             ("draw-text!", self.draw_text),
             ("text-width", self.text_width),
@@ -726,13 +760,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--director", action="store_true",
                         help="the director paces the match to hold the stack "
                              "in its pressure band")
+    parser.add_argument("--duel", default=None, metavar="PERSONA", nargs="?",
+                        const="wall",
+                        help="boot straight into a duel against this persona "
+                             "(default: wall)")
     args = parser.parse_args(argv)
 
     host = PygameHost(headless=args.headless, max_frames=args.frames,
                       autostart=args.autostart, play_script=args.play,
                       mode=args.mode, level=args.level, seed=args.seed,
                       ai=args.ai, director=args.director, locale=args.locale,
-                      profile_path=args.profile)
+                      duel=args.duel, profile_path=args.profile)
     env = make_game_env(host)
     from lisp import load_lisp
 

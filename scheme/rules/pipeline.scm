@@ -249,7 +249,11 @@
                        (pol (policy-of s1))
                        (base (scale-points (clear-points n (game-level s1))
                                            (policy-clear-mult pol)))
-                       (awarded (if (game-b2b s1)
+                       ;; The chain pays only when THIS clear keeps it
+                       ;; alive: `(game-b2b s1)` is the *previous* clear's
+                       ;; verdict, and a single on a Tetris's heels breaks
+                       ;; the chain rather than inheriting its price.
+                       (awarded (if (and (game-b2b s1) (is-b2b? n))
                                     ;; The b2b half-step travels as halves:
                                     ;; three halves floored, four if the
                                     ;; mode's chains pay double.
@@ -289,18 +293,28 @@
                                    (list (b2b))
                                    '())))))))))))
 
+    ;; The one spawn law: put a named piece into the well, or read the refusal
+    ;; as the match's death. The lock track, both hold branches and the restart
+    ;; all land here, because a spawn that does not fit is the *only* way a game
+    ;; ends — and a piece the hold slot made is no less a spawn than one the bag
+    ;; dealt. (It used to be a second, unchecked path: a hold into a packed
+    ;; well left a piece standing inside the stack, and the lock that followed
+    ;; wrote over settled cells instead of topping out.)
+    (define (spawn-into state name bag)
+      (let ((p (make-falling name (spawn-x-for name) spawn-y 0)))
+        (if (cells-fit? (game-board state)
+                        (cells-at name 0 (spawn-x-for name) spawn-y))
+            (ok (with-event (game-with state active: p bag: bag)
+                            (spawned name)))
+            (ok (with-event (game-with state active: p bag: bag phase: (over))
+                            (game-over))))))
+
     ;; Draw the next piece. The one way a game ends: a spawn that does not
     ;; fit. That is not a refusal — it is the over phase, announced in the
     ;; journal like any other fact.
     (define (spawn-piece state)
       (let-values (((name bag) (bag-next (game-bag state))))
-        (let ((p (make-falling name (spawn-x-for name) spawn-y 0)))
-          (if (cells-fit? (game-board state)
-                          (cells-at name 0 (spawn-x-for name) spawn-y))
-              (ok (with-event (game-with state active: p bag: bag)
-                              (spawned name)))
-              (ok (with-event (game-with state active: p bag: bag phase: (over))
-                              (game-over)))))))
+        (spawn-into state name bag)))
 
     ;; The lock track: three arrows composed with the fish. Locking *then*
     ;; spawning *then* asking whether the mode's win condition just fired —
@@ -327,31 +341,23 @@
             (result-bind (fall-n state d 'hard) lock-and-spawn))))
 
     ;; Park the current piece and pick up the hold slot — or refuse when the
-    ;; hold was already spent on this piece.
+    ;; hold was already spent on this piece. The piece that answers the swap is
+    ;; a spawn like any other: `spawn-into` decides whether there is room, so a
+    ;; hold into a packed well tops the match out instead of leaving a piece
+    ;; standing inside the stack. The swap is announced before the spawn's own
+    ;; fact, because the swap is the command and the spawn its aftermath.
     (define (hold-swap state)
       (if (not (game-can-hold state))
           (err (hold-used))
-          (let ((cur (falling-name (game-active state))))
-            (if (game-hold state)
-                (let ((name (game-hold state)))
-                  (ok (with-event
-                       (game-with state
-                                  active: (make-falling name
-                                                        (spawn-x-for name)
-                                                        spawn-y 0)
-                                  hold: cur
-                                  can-hold: #f)
-                       (hold-swapped))))
+          (let* ((cur (falling-name (game-active state)))
+                 (held (game-hold state))
+                 (spent (with-event
+                         (game-with state hold: cur can-hold: #f)
+                         (hold-swapped))))
+            (if held
+                (spawn-into spent held (game-bag state))
                 (let-values (((name bag) (bag-next (game-bag state))))
-                  (ok (with-event
-                       (game-with state
-                                  active: (make-falling name
-                                                        (spawn-x-for name)
-                                                        spawn-y 0)
-                                  hold: cur
-                                  can-hold: #f
-                                  bag: bag)
-                       (hold-swapped))))))))
+                  (spawn-into spent name bag))))))
 
 
     ;; ------------------------------------------------------------------ ;;
@@ -442,27 +448,31 @@
              (seed (bag-seed (game-bag state)))
              (board (if (cheese-config? config)
                         (cheese-board seed (config-cheese-rows config))
-                        (make-board))))
+                        (make-board)))
+             ;; The fresh match before its first piece: the recipe kept, the
+             ;; counters cleared, the bag where the last match left it.
+             (fresh (game-with state
+                               phase: (playing)
+                               board: board
+                               active: #f
+                               hold: #f
+                               can-hold: #t
+                               score: 0
+                               lines: 0
+                               level: (config-starting-level config)
+                               bank: 0
+                               combo: 0
+                               b2b: #f
+                               clock: 0
+                               pace: 1
+                               journal: '())))
         (let-values (((name bag*) (bag-next (game-bag state))))
-          (let ((p (make-falling name (spawn-x-for name) spawn-y 0)))
-            (with-event
-             (game-with state
-                        phase: (playing)
-                        board: board
-                        active: p
-                        hold: #f
-                        can-hold: #t
-                        bag: bag*
-                        score: 0
-                        lines: 0
-                        level: (config-starting-level config)
-                        bank: 0
-                        combo: 0
-                        b2b: #f
-                        clock: 0
-                        pace: 1
-                        journal: '())
-             (restarted))))))
+          ;; The spawn law again: a board with no room for its first piece (a
+          ;; full cheese well) is a lost match, not a piece folded into the
+          ;; stack. `spawn-into` answers a Result; a restart answers a state.
+          (result-unwrap
+           (result-map (spawn-into fresh name bag*)
+                       (cut with-event <> (restarted)))))))
 
     ;; Where the piece would land if it were at column `x` in rotation `rot`
     ;; — the AI's pure probe. `#f` when that placement does not even fit at

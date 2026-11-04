@@ -371,6 +371,13 @@
 (assert "marathon never wins"
         (not (victory? 100 999999 (make-board) (default-config))))
 (check (time-remaining 45000 (config-from 'ultra '((time-limit 60)))) 15)
+;; Every default is a counted thing, and a count is exact: an inexact
+;; time-limit leaked a decimal point into the ultra HUD ("TIME 120.0") because
+;; `time-remaining` subtracts whole seconds from it.
+(check (exact? (config-time-limit (config-from 'ultra '()))) #t)
+(check (exact? (time-remaining 0 (config-from 'ultra '()))) #t)
+(check (exact? (clock-limit (config-from 'ultra '()))) #t)
+(check (time-remaining 0 (config-from 'ultra '())) 120)
 
 ;; --------------------------------------------------------------------- ;;
 ;;  scoring — combo, back-to-back                                         ;;
@@ -479,6 +486,14 @@
         (= (garbage-count (game-board (fresh-game seed: 3 mode: 'cheese
                                                      options: '((cheese-rows 4)))))
            36))
+
+;; A well with no room for its first piece is a lost match, not a piece folded
+;; into the stack: the boot reads the spawn the way the lock track does, and the
+;; board it could not play on is left exactly as it was dealt.
+(let ((packed (fresh-game seed: 3 mode: 'cheese options: '((cheese-rows 20)))))
+  (check (tag-of (game-phase packed)) 'over)
+  (check (memq 'game-over (map tag-of (game-journal packed))) '(game-over))
+  (check (garbage-count (game-board packed)) 180))
 (assert "a sprint match carries its target"
         (= (config-target-lines (game-config (fresh-game seed: 1 mode: 'sprint
                                                          options: '((target-lines 20)))))

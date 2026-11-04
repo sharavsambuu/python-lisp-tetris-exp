@@ -162,6 +162,39 @@
   (host-run-frames! 1)
   (tk-check "the second shift was refused" (game-hold *st*) first))
 
+;; A spent hold is a refusal — and a refusal is data, but the player still
+;; deserves an answer. A refused command changes nothing in the world, so it
+;; journals nothing: the edge voices the reason itself (effects.scm's
+;; `refusal-sfx!`), which is where the refusal is in hand.
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(host-type! "shift")
+(host-run-frames! 1)
+(tk-assert "the swap said hold" (member "hold" (host-sfx-names)))
+(host-type! "shift")
+(host-run-frames! 1)
+(tk-assert "the spent hold says denied" (member "denied" (host-sfx-names)))
+(tk-assert "and the match is untouched" (phase-playing? *st*))
+
+;; The piece the hold slot answers with is a spawn like any other: a well with
+;; no room tops the match out. The spawn used to be unchecked, so the piece
+;; stood INSIDE the stack and the lock that followed wrote over settled cells
+;; — a phantom placement that could clear rows for free.
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let ((packed (let loop ((bd (make-board)) (y 0))
+                (if (>= y matrix-height)
+                    bd
+                    (loop (board-place bd 'i
+                                       (map (lambda (x) (cons x y))
+                                            (list 3 4 5 6)))
+                          (+ y 1))))))
+  (set! *st* (game-with *st* board: packed hold: 't can-hold: #t))
+  (host-type! "shift")
+  (host-run-frames! 1))
+(tk-assert "the impossible hold ends the match" (phase-over? *st*))
+(tk-assert "the top-out is announced" (member "over" (host-sfx-names)))
+
 ;; A re-press starts a FRESH repeat clock. The stale milliseconds of the
 ;; last hold must not buy instant repeats on the next press — before the
 ;; fix, a second hold after 320ms of holding fired its repeats at once, and
@@ -432,6 +465,33 @@
                 1)))
 
 ;; --------------------------------------------------------------------- ;;
+;;  a single is not a chain — the half-again belongs to a Tetris on a Tetris ;;
+;; --------------------------------------------------------------------- ;;
+
+;; `(game-b2b s)` is the PREVIOUS clear's verdict; the award belongs to a chain
+;; that is still alive, and a one-line clear breaks it. The pipeline used to
+;; read the flag alone, so a single on a Tetris's heels paid 150 instead of 100.
+(tk-section "b2b does not discount a single")
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let* ((hole 5)
+       (b (board-place (make-board) 'i
+                       (map (lambda (x) (cons x (- matrix-height 1)))
+                            (filter (lambda (x) (not (= x hole)))
+                                    (iota matrix-width))))))
+  (set! *st* (game-with *st*
+                        board: b
+                        active: (make-falling 'i 3 0 1)   ; vertical, column 5
+                        b2b: #t
+                        combo: 0
+                        score: 0))
+  (set! *st* (result-unwrap-or (apply-command *st* (hard-drop)) *st*)))
+(tk-check "one row cleared" (game-lines *st*) 1)
+;; 32 for the sixteen-row slam, 100 for the single — no half again.
+(tk-check "the single paid its own price" (game-score *st*) 132)
+(tk-assert "the single broke the chain" (not (game-b2b *st*)))
+
+;; --------------------------------------------------------------------- ;;
 ;;  a sprint win, steered by the built-in AI, through the real loop          ;;
 ;; --------------------------------------------------------------------- ;;
 
@@ -625,6 +685,24 @@
 ;; And ESC on the title closes the door: the loop asks to quit.
 (host-type! "escape")
 (tk-assert "escape on the title asks to quit" *host-quit?*)
+
+;; --------------------------------------------------------------------- ;;
+;;  a paused restart speaks once                                            ;;
+;; --------------------------------------------------------------------- ;;
+
+;; The restart's own `(restarted)` fact is the sound. The paused screen's key
+;; handler used to ask for a "start" of its own as well, so one press rang
+;; twice — the journal is the one voice, on every screen.
+(tk-section "a paused restart speaks once")
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(host-type! "escape")              ; a live match pauses rather than leaves
+(tk-check "escape paused the match" (phase) 'paused)
+(host-type! "r")                   ; the replay key at a decision point
+(host-run-frames! 2)
+(tk-check "the replay spoke exactly once"
+          (count (lambda (n) (string=? n "start")) (host-sfx-names))
+          2)                       ; the match's own start, and the replay's
 
 ;; --------------------------------------------------------------------- ;;
 ;;  the director                                                            ;;

@@ -110,9 +110,13 @@ own arm, and the `else` stays silent because a fact with no sound is normal:
     ((dropped _) (sfx! "drop"))
     ((locked _) (sfx! "lock"))
     ((hold-swapped) (sfx! "hold"))
-    ((hold-refused) (sfx! "denied"))
     (else #f)))
 ```
+
+Note that a *refused* command has no row here, and should not: a refusal is
+`(err refusal)`, not a fact about the world — nothing happened, so the journal
+has nothing to announce. The one refusal a player should hear (a spent hold) is
+voiced at the edge, where the refusal itself is in hand.
 
 Note the `_` in `((dropped _)` and `((locked _)`: the pattern binds the
 payload to a name you decline to use. Compare with `((dropped d) ...)` in the

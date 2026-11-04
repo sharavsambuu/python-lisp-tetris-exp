@@ -199,13 +199,12 @@ colors:
 ((dropped d)
  (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
 ((hold-swapped) (view-hold-pulse!))
-((hold-refused) (fx-thud! 1.0))
 ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))
 ((victory) (view-flash! '(230 230 240) 220))
 ((game-over) (view-flash! '(160 40 40) 260))
 ```
 
-Six lines, six feedback personalities, all derived from facts the *rules*
+Five lines, five feedback personalities, all derived from facts the *rules*
 already announced. Note what is absent: the award table never asks "what
 score did this clear pay" — that would couple presentation to scoring. It
 reads only the *facts*, which is why a scoring change can never silently

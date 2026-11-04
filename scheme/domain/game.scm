@@ -65,7 +65,6 @@
           moved
           rotated
           hold-swapped
-          hold-refused
           cleared
           scored
           combo
@@ -142,7 +141,6 @@
                           (moved)
                           (rotated)
                           (hold-swapped)
-                          (hold-refused)
                           (cleared rows)
                           (scored points)
                           (combo n)
@@ -256,17 +254,27 @@
 
     ;; A game that is already falling: what the conductor boots into, and what
     ;; the tests use to skip the title screen.
+    ;;
+    ;; The boot obeys the same spawn law `(tetris rules)`'s `spawn-into` keeps:
+    ;; a piece goes into the well only where it fits, and a board with no room
+    ;; — a full cheese well — boots as a match already lost, announced like
+    ;; every other death. Folding the piece in anyway would let the first lock
+    ;; write over settled cells.
     (define (fresh-game . args)
       (let ((g (apply new-game args)))
         (let-values (((piece bag) (bag-next (game-bag g))))
           (let* ((name piece)
-                 (p (make-falling name (spawn-x-for name) spawn-y 0)))
+                 (p (make-falling name (spawn-x-for name) spawn-y 0))
+                 (fits? (cells-fit? (game-board g)
+                                    (cells-at name 0 (spawn-x-for name) spawn-y))))
             (game-with (game-with g
-                                  phase: (playing)
+                                  phase: (if fits? (playing) (over))
                                   active: p
                                   bag: bag
                                   journal: '())
-                       journal: (list (spawned name)))))))
+                       journal: (list (if fits?
+                                          (spawned name)
+                                          (game-over))))))))
 
     ;; make-bag plumbing: the seed in, a queue plus the next seed out.
     (define (make-bag-into seed)

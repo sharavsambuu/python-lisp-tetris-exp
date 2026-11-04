@@ -68,8 +68,11 @@
                           (cheese-rows: cr (config-cheese-rows c)))
       (make-mode-config m sl tl tl2 cr))
 
+    ;; Every default is an *integer*: seconds, lines and levels are counted, not
+    ;; measured, and an inexact default (120.0) leaked a decimal point into the
+    ;; ultra's countdown — `time-remaining` subtracts whole seconds from it.
     (define (default-config)
-      (make-mode-config (marathon) 1 40 120.0 10))
+      (make-mode-config (marathon) 1 40 120 10))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The option parser — where a menu typo is refused by name          ;;

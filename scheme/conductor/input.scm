@@ -39,6 +39,15 @@
     ;; anything" decision.
     (define repeat-able '("left" "right" "down"))
 
+    ;; A command's answer, taken down off the railway: the new state, or the old
+    ;; one — voiced. The refusal is data the pipeline refused to act on, and the
+    ;; edge still owes the player an answer; effects.scm owns which refusals are
+    ;; worth a sound (a wall is not).
+    (define (command-outcome r fallback)
+      (if (result-ok? r)
+          (ok-value r)
+          (begin (refusal-sfx! r) fallback)))
+
     ;; One polled event against the live match. This runs ONLY while the
     ;; phase is playing — a paused or finished match is a *decision point*,
     ;; and its keys go through `play-key!` instead. The state after the
@@ -89,8 +98,7 @@
                (else
                 (let ((cmd (key->command key)))
                   (if cmd
-                      (let ((r (apply-command st cmd)))
-                        (if (result-ok? r) (ok-value r) st))
+                      (command-outcome (apply-command st cmd) st)
                       st))))))
           ((key-repeat)
            ;; The host says a key is still down. Only the repeatable
@@ -101,8 +109,7 @@
              (if (member key repeat-able)
                  (let ((cmd (key->command key)))
                    (if cmd
-                       (let ((r (apply-command st cmd)))
-                         (if (result-ok? r) (ok-value r) st))
+                       (command-outcome (apply-command st cmd) st)
                        st))
                  st)))
           (else st))))
@@ -156,9 +163,11 @@
                 (set! *dirty* #t)   ; back to the live picture at once
                 (sfx! "pause"))
                ((string=? key "r")
+                ;; The replay's own `(restarted)` fact is the sound: the drain
+                ;; speaks it on the frame the fresh match first paints. Asking
+                ;; for a blip here as well rang "start" twice for one press.
                 (set! *st* (ok-value (apply-command *st* (restart))))
-                (set! *settled* #f)
-                (sfx! "start"))
+                (set! *settled* #f))
                ((string=? key "escape")
                 (show-screen! 'title (title-menu))
                 (sfx! "pause"))
@@ -168,8 +177,8 @@
         (else
          (let ((cmd (key->command key)))
            (if cmd
-               (let ((r (apply-command *st* cmd)))
-                 (if (result-ok? r) (set! *st* (ok-value r)) #f)
+               (begin
+                 (set! *st* (command-outcome (apply-command *st* cmd) *st*))
                  (set! *dirty* #t))
                #f)))))
 

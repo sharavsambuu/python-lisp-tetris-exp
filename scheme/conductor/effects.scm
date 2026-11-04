@@ -25,6 +25,7 @@
 
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+        (tetris result)
         (tetris game))
 
 (begin
@@ -91,11 +92,23 @@
         ((dropped _) (sfx! "drop"))
         ((locked _) (sfx! "lock"))
         ((hold-swapped) (sfx! "hold"))
-        ((hold-refused) (sfx! "denied"))
         ;; The combo runs on top of the clear blip, like an announcer over
         ;; the SFX — this arm answers the frames with no ranked fact.
         ((combo n) (sfx! (combo-sfx n)))
         ((b2b) (sfx! "b2b"))
+        (else #f)))
+
+    ;; A *refusal* is the other half of a command's answer: `(err refusal)`,
+    ;; which the railway's callers swallow so the block simply does not move.
+    ;; The journal is for facts about the world, and a refused command changes
+    ;; nothing in it — so the refusal is voiced here, at the edge, and only the
+    ;; one a keypress caused: a wall is the game's own silence, but a spent hold
+    ;; is a key the player meant and the game would not take. The tag names the
+    ;; variant, so a refusal can be matched here without `(tetris rules)` having
+    ;; to export its constructors across the fence.
+    (define (refusal-sfx! r)
+      (variant-match (err-reason r)
+        ((hold-used) (sfx! "denied"))
         (else #f)))
 
     ;; Play the journal, then hand back the state with the paper trail
@@ -193,7 +206,6 @@
            ((dropped d)
             (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
            ((hold-swapped) (view-hold-pulse!))
-           ((hold-refused) (fx-thud! 1.0))
            ((combo n) (view-combo-pop! n))
            ((b2b) (view-b2b-pop!))
            ((level-up _) (view-flash! '(80 220 200) 170) (fx-thud! *level-up-shake-px*))

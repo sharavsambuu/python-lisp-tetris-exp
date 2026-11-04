@@ -32,7 +32,7 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 import pygame  # noqa: E402
 import pytest  # noqa: E402
 
-from lisp import load_lisp, run  # noqa: E402
+from shslisp import load_lisp, run  # noqa: E402
 
 import host.pygame_host as ph  # noqa: E402
 

@@ -1,7 +1,7 @@
 """The pygame edge: window, clock, pixels, speaker — published as primitives.
 
 **Bounded context.** This module knows pygame-ce and the seam
-(:func:`lisp.make_env` / :func:`lisp.install_primitives`) and nothing else. It
+(:func:`shslisp.make_env` / :func:`shslisp.install_primitives`) and nothing else. It
 never imports anything from ``scheme/`` — the two sides meet only at the
 declared primitive table in ``PygameHost.primitives``, and at the one program
 entry point: loading ``scheme/main.scm`` into an environment built here.
@@ -42,10 +42,10 @@ import sys
 from pathlib import Path
 
 import pygame
-import lisp.evaluator
+import shslisp.evaluator
 
-from lisp import install_primitives, make_env
-from lisp.types import intern_keyword, intern
+from shslisp import install_primitives, make_env
+from shslisp.types import intern_keyword, intern
 
 __all__ = ["PygameHost", "make_game_env", "main", "SCHEME_DIR"]
 
@@ -171,7 +171,7 @@ def _reset_frame_budget() -> None:
     chain degrades to "no reset" — the old session-length semantics —
     rather than crashing, if the internals ever move.
     """
-    local = getattr(lisp.evaluator, "_local", None)
+    local = getattr(shslisp.evaluator, "_local", None)
     budget = getattr(local, "budget", None) if local is not None else None
     if budget is not None:
         budget.steps = 0
@@ -205,7 +205,7 @@ def _doc_to_python(value):
     Python list of ``Pair`` entries or a ``Pair`` spine whose cars are
     the entries and whose cdr is the rest (a list or another cell).
     """
-    from lisp.types import NIL, Pair
+    from shslisp.types import NIL, Pair
 
     if value is NIL or value is None:
         return None
@@ -242,7 +242,7 @@ def _doc_entry(entry):
     rest. Both readings answer the same ``(cdr entry)`` on the Scheme
     side; this side accepts both and refuses everything else.
     """
-    from lisp.types import Pair
+    from shslisp.types import Pair
 
     if isinstance(entry, Pair):
         return str(entry.car), _doc_to_python(entry.cdr)
@@ -253,7 +253,7 @@ def _doc_entry(entry):
 
 def _doc_to_scheme(value):
     """A document value, Python → Scheme: an object is an alist."""
-    from lisp.types import NIL, Pair
+    from shslisp.types import NIL, Pair
 
     if value is None:
         return NIL
@@ -384,7 +384,7 @@ class PygameHost:
         dt, so repeats are exactly periodic in time no matter how the frame
         rate wobbles, and the game never tracks held state itself.
         """
-        from lisp.types import NIL
+        from shslisp.types import NIL
 
         events: list = []
         if self.max_frames is not None and self._frames >= self.max_frames:
@@ -444,7 +444,7 @@ class PygameHost:
         a second flag buried the first, so ``--mode`` next to
         ``--autostart`` was silently dropped and the AI never enabled.)
         """
-        from lisp.types import NIL, Pair, Symbol, make_list
+        from shslisp.types import NIL, Pair, Symbol, make_list
 
         def pair(key, value):
             return Pair(Symbol(key), value)
@@ -487,7 +487,7 @@ class PygameHost:
         """
         import json
 
-        from lisp.types import NIL
+        from shslisp.types import NIL
 
         try:
             text = self.profile_path.read_text(encoding="utf-8")
@@ -574,7 +574,7 @@ class PygameHost:
         per shake step.
         """
         surface = self._require_display()
-        from lisp.types import NIL
+        from shslisp.types import NIL
         if flat is NIL or flat is None:
             return  # an empty board crosses as the empty list
         try:
@@ -733,7 +733,7 @@ def make_game_env(host: PygameHost):
     # runaway loop in a frame dies with a LispBudgetError instead of
     # hanging the game. It is not a session-length bound; a session is
     # millions of honest steps spread across millions of fresh counts.
-    lisp.evaluator.STEPS_BUDGET = FRAME_STEPS_BUDGET
+    shslisp.evaluator.STEPS_BUDGET = FRAME_STEPS_BUDGET
     env = make_env(search_paths=[SCHEME_DIR])
     install_primitives(env, host.primitives(), source="host/pygame_host.py")
     return env
@@ -786,7 +786,7 @@ def main(argv: list[str] | None = None) -> int:
                       duel=args.duel, no_lookahead=args.no_lookahead,
                       profile_path=args.profile)
     env = make_game_env(host)
-    from lisp import load_lisp
+    from shslisp import load_lisp
 
     try:
         load_lisp(env, SCHEME_DIR / "main.scm")

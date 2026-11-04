@@ -277,7 +277,7 @@ test code that ignores it fails in confusing ways:
 2. **The raise is not a Scheme condition.** `LispBudgetError` cannot be
    caught by `guard` — deliberately, because a hang detector the program
    could trap would detect nothing. Only the *embedding host* may size it:
-   `lisp.evaluator.STEPS_BUDGET = 100_000_000` in the harness, before the
+   `shslisp.evaluator.STEPS_BUDGET = 100_000_000` in the harness, before the
    load. A Scheme-side "try to run it with a bigger budget" is not a thing.
 3. **Tail calls cost no depth, but they cost steps.** A named-let loop over
    a million cells is honest work and will trip a 5M budget; that is the

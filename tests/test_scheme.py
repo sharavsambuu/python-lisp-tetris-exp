@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-import lisp.evaluator
-from lisp import load_lisp, make_env, run
+import shslisp.evaluator
+from shslisp import load_lisp, make_env, run
 
 # The domain tests steer a whole sprint match through the one-ply planner —
 # hundreds of thousands of interpreter steps in one top-level form. In
@@ -29,18 +29,18 @@ TESTS = ROOT / "tests" / "scm"
 def _restore_step_budget():
     """Snapshot the interpreter's step budget around every test.
 
-    `_load` (and some tests directly) set `lisp.evaluator.STEPS_BUDGET` —
+    `_load` (and some tests directly) set `shslisp.evaluator.STEPS_BUDGET` —
     a module global shared by every suite in the process. Whatever a test
     raises it to, this puts it back, so a leaked ceiling can never quietly
     loosen another suite's hang detector.
     """
-    saved = lisp.evaluator.STEPS_BUDGET
+    saved = shslisp.evaluator.STEPS_BUDGET
     yield
-    lisp.evaluator.STEPS_BUDGET = saved
+    shslisp.evaluator.STEPS_BUDGET = saved
 
 
 def _load(name, extra_paths=(), budget=DEFAULT_BUDGET):
-    lisp.evaluator.STEPS_BUDGET = budget
+    shslisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
     assert env is not None
@@ -127,7 +127,7 @@ def test_painter_keeps_up_with_a_full_board():
     """
     import time
 
-    lisp.evaluator.STEPS_BUDGET = 100_000_000
+    shslisp.evaluator.STEPS_BUDGET = 100_000_000
     env = make_env(search_paths=[SCHEME, TESTS])
     load_lisp(env, TESTS / "bench-view.scm")
 
@@ -153,7 +153,7 @@ def test_duel_painter_keeps_up_with_two_full_boards():
     """
     import time
 
-    lisp.evaluator.STEPS_BUDGET = 200_000_000
+    shslisp.evaluator.STEPS_BUDGET = 200_000_000
     env = make_env(search_paths=[SCHEME, TESTS])
     load_lisp(env, TESTS / "bench-view.scm")
 
@@ -181,7 +181,7 @@ def test_duel_rect_cache_survives_a_shake():
     """
     import time
 
-    lisp.evaluator.STEPS_BUDGET = 200_000_000
+    shslisp.evaluator.STEPS_BUDGET = 200_000_000
     env = make_env(search_paths=[SCHEME, TESTS])
     load_lisp(env, TESTS / "bench-view.scm")
 

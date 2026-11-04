@@ -21,8 +21,8 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 import pygame  # noqa: E402
 import pytest  # noqa: E402
 
-from lisp import install_primitives, load_lisp, make_env, run  # noqa: E402
-from lisp.types import NIL, intern, intern_keyword  # noqa: E402
+from shslisp import install_primitives, load_lisp, make_env, run  # noqa: E402
+from shslisp.types import NIL, intern, intern_keyword  # noqa: E402
 
 MODULES = ["core/rop", "domain/geometry", "domain/board", "domain/bag",
            "domain/modes", "domain/game", "domain/plan", "domain/telemetry", "domain/director", "rules/commands",

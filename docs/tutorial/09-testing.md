@@ -331,12 +331,12 @@ leaking their ceiling into each other:
 @pytest.fixture(autouse=True)
 def _restore_step_budget():
     """Snapshot the interpreter's step budget around every test."""
-    saved = lisp.evaluator.STEPS_BUDGET
+    saved = shslisp.evaluator.STEPS_BUDGET
     yield
-    lisp.evaluator.STEPS_BUDGET = saved
+    shslisp.evaluator.STEPS_BUDGET = saved
 
 def _load(name, extra_paths=(), budget=DEFAULT_BUDGET):
-    lisp.evaluator.STEPS_BUDGET = budget
+    shslisp.evaluator.STEPS_BUDGET = budget
     env = make_env(search_paths=[SCHEME, *extra_paths])
     load_lisp(env, TESTS / name)
     assert env is not None

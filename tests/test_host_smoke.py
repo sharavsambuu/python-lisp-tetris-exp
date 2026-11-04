@@ -104,7 +104,7 @@ def test_profile_round_trips_through_the_real_file(tmp_path):
     import pygame
 
     import host.pygame_host as ph
-    from lisp.types import NIL, Pair
+    from shslisp.types import NIL, Pair
 
     path = tmp_path / "profile.json"
     try:
@@ -166,13 +166,13 @@ def test_game_env_keeps_a_per_frame_budget():
     os.environ["SDL_AUDIODRIVER"] = "dummy"
     sys.path.insert(0, str(ROOT))
 
-    import lisp.evaluator
+    import shslisp.evaluator
     import host.pygame_host as ph
 
     host = ph.PygameHost(headless=True)
     try:
         ph.make_game_env(host)
-        assert lisp.evaluator.STEPS_BUDGET == ph.FRAME_STEPS_BUDGET, (
+        assert shslisp.evaluator.STEPS_BUDGET == ph.FRAME_STEPS_BUDGET, (
             "the game env set a session-length step budget again: the "
             "per-frame reset in tick! is what keeps the hang detector honest")
     finally:
@@ -194,10 +194,10 @@ def test_step_budget_is_a_per_frame_ceiling(tmp_path):
     sys.path.insert(0, str(ROOT))
     import pygame
 
-    from lisp import load_lisp, run
-    from lisp.errors import LispBudgetError
+    from shslisp import load_lisp, run
+    from shslisp.errors import LispBudgetError
 
-    import lisp.evaluator
+    import shslisp.evaluator
     import host.pygame_host as ph
 
     pygame.init()
@@ -227,24 +227,24 @@ def test_step_budget_is_a_per_frame_ceiling(tmp_path):
         # Far below one old-style session, far above one honest frame: the
         # per-frame reset carries 120 frames across it; the old per-form
         # budget tripped inside the first ten.
-        lisp.evaluator.STEPS_BUDGET = 100_000
+        shslisp.evaluator.STEPS_BUDGET = 100_000
         try:
             assert run(session, env) == 120, \
                 "120 honest frames did not fit under a 100k per-frame budget"
         finally:
-            lisp.evaluator.STEPS_BUDGET = ph.FRAME_STEPS_BUDGET
+            shslisp.evaluator.STEPS_BUDGET = ph.FRAME_STEPS_BUDGET
 
         # The detector still detects: an endless loop inside one frame —
         # tick! never called, so the counter never resets — dies at the
         # budget with a Lisp error, not never.
-        lisp.evaluator.STEPS_BUDGET = 100_000
+        shslisp.evaluator.STEPS_BUDGET = 100_000
         try:
             run("(let loop () (loop))", env)
             raised = False
         except LispBudgetError:
             raised = True
         finally:
-            lisp.evaluator.STEPS_BUDGET = ph.FRAME_STEPS_BUDGET
+            shslisp.evaluator.STEPS_BUDGET = ph.FRAME_STEPS_BUDGET
         assert raised, "an endless loop survived the per-frame budget"
     finally:
         pygame.quit()
@@ -265,8 +265,8 @@ def test_painter_paints():
     sys.path.insert(0, str(ROOT))
     import pygame
 
-    from lisp import load_lisp, make_env, run
-    from lisp.types import NIL
+    from shslisp import load_lisp, make_env, run
+    from shslisp.types import NIL
 
     pygame.init()
 
@@ -308,7 +308,7 @@ def test_painter_paints():
         ("quit!", lambda: None),
         ("autostart?", lambda: True),
     ]
-    from lisp import install_primitives
+    from shslisp import install_primitives
 
     install_primitives(env, install, source="test_painter_paints")
 

@@ -93,7 +93,7 @@ own hang-detector budget (5M steps by default), and that raise is *not* a
 Scheme condition — a hang detector the program could `guard` away would be
 no detector at all. Whole-match simulations (the AI steering a sprint,
 gravity slam after gravity slam) cost millions of steps per form, so the
-pytest bootstrap raises the ceiling (`lisp.evaluator.STEPS_BUDGET`: 50M per
+pytest bootstrap raises the ceiling (`shslisp.evaluator.STEPS_BUDGET`: 50M per
 suite, 500M for `run-all`'s whole walk). Under a bare `shs run`, suites whose
 heaviest form fits the default budget pass today (`ui-tests`); the rest stop
 with `LispBudgetError` — the interpreter refusing to look hung, not a test

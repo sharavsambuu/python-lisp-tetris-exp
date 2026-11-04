@@ -43,9 +43,15 @@
     ;; one — voiced. The refusal is data the pipeline refused to act on, and the
     ;; edge still owes the player an answer; effects.scm owns which refusals are
     ;; worth a sound (a wall is not).
+    ;;
+    ;; A successful command also *repaints*. That is not tidiness: a repeat is
+    ;; silent now (see the repeat arm below), so the journal can no longer be
+    ;; the paint gate's only witness to a glide — the very trap chapter 16
+    ;; names, one channel over (silence in the speaker forced a spokesman in
+    ;; the paint gate, and the idle piece froze). The spokesman is `*dirty*`.
     (define (command-outcome r fallback)
       (if (result-ok? r)
-          (ok-value r)
+          (begin (set! *dirty* #t) (ok-value r))
           (begin (refusal-sfx! r) fallback)))
 
     ;; One polled event against the live match. This runs ONLY while the
@@ -102,14 +108,15 @@
                       st))))))
           ((key-repeat)
            ;; The host says a key is still down. Only the repeatable
-           ;; commands glide; one-shots ignore their repeats, and repeats
-           ;; are deliberately silent — 25 blips a second is a machine
-           ;; gun, not feedback.
+           ;; commands glide, and a repeat is the pump's *tick*, not a moment:
+           ;; the move happens and the wage is paid, but nothing is journaled
+           ;; (a blip every 40ms is a buzz, not feedback — the press already
+           ;; spoke, and the paint gate has its own spokesman now).
            (let ((key (cadr (assq key: ev))))
              (if (member key repeat-able)
                  (let ((cmd (key->command key)))
                    (if cmd
-                       (command-outcome (apply-command st cmd) st)
+                       (command-outcome (apply-command st cmd loud: #f) st)
                        st))
                  st)))
           (else st))))

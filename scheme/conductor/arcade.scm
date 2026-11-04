@@ -873,6 +873,12 @@
     ;; other direction when the first refuses — a tight slot does not
     ;; care which way the hand came from. A refused step answers #f: the
     ;; caller kills the plan, it never hard-drops a healthy piece.
+    ;;
+    ;; The slides are QUIET (`loud: #f`): this is the machine's hand, and one
+    ;; column a frame is a tick, not a gesture — the same rule the host's repeat
+    ;; pump keeps for the player's held keys. The rotate and the slam keep their
+    ;; voices: they are one-shot facts of this piece's life, and a watcher who
+    ;; pressed `a` should hear the AI *decide*, not hear it *glide*.
     (define (steer-to st x rot)
       (let* ((p (game-active st))
              (px (falling-x p))
@@ -890,10 +896,10 @@
                                                     (rotate-cw)))))
                          (if (result-ok? r2) (ok-value r2) #f))))))
               ((< px x)
-               (let ((r (apply-command st (right))))
+               (let ((r (apply-command st (right) loud: #f)))
                  (if (result-ok? r) (ok-value r) #f)))
               ((> px x)
-               (let ((r (apply-command st (left))))
+               (let ((r (apply-command st (left) loud: #f)))
                  (if (result-ok? r) (ok-value r) #f)))
               (else (ai-drop st)))))
 

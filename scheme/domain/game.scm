@@ -63,6 +63,7 @@
           locked
           dropped
           moved
+          soft-dropped
           rotated
           hold-swapped
           cleared
@@ -135,10 +136,18 @@
     ;; `level-up` and `victory` are the progression facts: the speaker and
     ;; the effects read them, the campaign ladder reads the phase they
     ;; accompany.
+    ;;
+    ;; `moved` and `soft-dropped` are both "the piece moved by a hand", and
+    ;; they are two facts because they are two gestures: a *column* (a slide,
+    ;; left or right) and a *row* (the soft drop). One fact per gesture is what
+    ;; lets the ear tell them apart — a slide's blip and a drop's are different
+    ;; sounds — without the edge having to remember which key caused a move.
+    ;; Gravity's own pull journals neither: the clock's work is not a gesture.
     (define-variant event (spawned what)
                           (locked what)
                           (dropped distance)
                           (moved)
+                          (soft-dropped)
                           (rotated)
                           (hold-swapped)
                           (cleared rows)

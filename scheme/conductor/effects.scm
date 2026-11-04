@@ -88,6 +88,11 @@
     (define (sfx-event! ev)
       (variant-match ev
         ((moved) (sfx! "move"))
+        ;; The player's descent has its own quieter, higher blip: a slide is a
+        ;; column and a drop is a row, and the ear should not have to consult
+        ;; the score to know which one happened. (This row is also what finally
+        ;; retires the `"soft-drop"` orphan chapter 16's audit kept naming.)
+        ((soft-dropped) (sfx! "soft-drop"))
         ((rotated) (sfx! "rotate"))
         ((dropped _) (sfx! "drop"))
         ((locked _) (sfx! "lock"))

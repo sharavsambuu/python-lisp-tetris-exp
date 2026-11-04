@@ -84,7 +84,7 @@ without it:
 and the resumable loops in the pipeline lean on it too:
 
 ```scheme
-(result-bind (soft-fall s) (cut loop <> (+ i 1)))
+(result-bind (soft-fall s #t) (cut loop <> (+ i 1)))
 ```
 
 `cut` shines when the *hole* is not the last argument — `try-shift` takes the

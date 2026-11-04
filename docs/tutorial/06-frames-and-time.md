@@ -91,7 +91,7 @@ spends the bank (`step-time`), and stops the moment the phase changes under it:
   (let loop ((s state) (i 0))
     (if (or (>= i n) (not (playing? s)))
         (ok s)
-        (result-bind (fall-by-one s #f) (cut loop <> (+ i 1))))))
+        (result-bind (fall-by-one s #f #f) (cut loop <> (+ i 1))))))
 ```
 
 ### The bank, in numbers

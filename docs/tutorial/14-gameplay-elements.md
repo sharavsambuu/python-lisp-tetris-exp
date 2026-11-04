@@ -56,35 +56,55 @@ It is the match's *recipe* — the thing a menu hands to `new-game` and a
 replay reproduces. Everything the feel needs lives elsewhere, in tables the
 recipe merely indexes (14.4).
 
-## 14.2 One descent, two customers, one flag
+## 14.2 One descent, three customers, two questions
 
-Gravity and the soft-drop key move the piece down a row. They are the same
-rule, and the code says so — one arrow, two callers:
+Gravity, a soft-drop keypress and a *held* soft-drop key's repeat all move the
+piece down a row. They are the same rule, and the code says so — one arrow,
+three callers:
 
 ```scheme
-;; One pull of descent: down a row, or — if the floor is there — the
-;; lock track. `loud?` decides whether the move is journaled: a
-;; player's soft-drop keypress is a fact worth a blip, but gravity is
-;; the clock's work, and an idle match should be silent.
-(define (fall-by-one state loud?)
+;; One pull of descent: down a row, or — if the floor is there — the lock
+;; track. Two questions travel with a pull, and they are deliberately separate.
+(define (fall-by-one state loud? paid?)
   ...)
-(define (soft-fall state) (fall-by-one state #t))
-;; gravity-ticks calls (fall-by-one s #f)
+(define (soft-fall state loud?) (fall-by-one state loud? #t))
+;; gravity-ticks calls (fall-by-one s #f #f) — quiet and unpaid
+;; apply-command's `down` arm passes the caller's loud?: a press is loud, a
+;; held key's repeat is not (conductor/input.scm answers that question)
 ```
 
-That one boolean carries *two* policies, and it is worth noticing how much
-design fits in it:
+This began as **one** flag, and the story of why it became two is this
+section. The single boolean said two things at once:
 
 - **Silence.** A fall a second is a blip a second — a machine gun. The
   player's keypress is a fact worth announcing; the clock's work is not.
-- **Price.** The same flag decides the wage: `(+ (game-score state)
-  (if loud? (policy-soft-row (policy-of state)) 0))`. **Gravity never
-  pays**, in any mode — the clock's work is not the player's skill.
+- **Price.** The same flag decided the wage: `(if loud? (policy-soft-row …) 0)`.
+  **Gravity never pays**, in any mode — the clock's work is not skill.
 
-When a rule has two customers who differ in *announcement* or *price*, do
-not write two rules — write one rule with the difference as a parameter.
-The flag's name should say what it means to the *rule* (`loud?` — does this
-move make a sound?) not to the caller.
+One flag, two policies read beautifully while there were two customers. Then
+the third arrived. The host's repeat pump (DAS/ARR) spends a held key every
+40ms, so a held soft drop is 25 rows a second — and those rows are *the
+player's hand*. They must be **paid** (a key press is skill, and the wage does
+not depend on the volume) and they must be **silent** (a blip every tick is a
+buzz). With one boolean, `loud? #f` bought silence by demoting a player's
+repeat to the clock's work: paid nothing, heard nothing. Two policies, one
+name, and the arrival of a customer they disagreed about is what exposed it.
+
+So the question split in two, and every caller now answers both:
+
+| caller | `loud?` | `paid?` | reads as |
+|---|---|---|---|
+| the clock's gravity tick | `#f` | `#f` | the clock earns nothing, says nothing |
+| a soft-drop **press** | `#t` | `#t` | the player acted (a moment) and earns the row |
+| a held key's **repeat** | `#f` | `#t` | the player acted (a tick) and still earns the row |
+
+The lesson survives from the one-flag version, sharpened: when a rule has
+customers who differ in *announcement* or *price*, do not write two rules —
+write one rule with the difference as a parameter. But give each difference its
+own parameter. **The flag whose name needs the word "and" to explain it is two
+flags wearing one name**, and the case that proves it is whichever customer
+arrives last — here, the held key, whose existence the whole DAS pump was
+already built around.
 
 ## 14.3 The lock chain: one indivisible fact
 

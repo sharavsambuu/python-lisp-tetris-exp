@@ -167,19 +167,28 @@ sound keeps the headline's shadow. The narrowness is the point: an overlay
 exception per *feature* is readable; a general "play everything" policy is
 the machine gun again.
 
-The machine-gun lesson has two scars in this game, and both shaped the
-same rule — **a fact per moment, never a fact per tick**:
+The machine-gun lesson has three scars in this game, and they shaped one rule
+and one counter-rule — **a fact per moment, never a fact per tick**, and
+**when you silence a rule, name what else carries its news**:
 
-- *Gravity's blips.* A fall a second, journaled, is a blip a second. The
-  rule is silent (`loud?` — chapter 14) and its *price* is silent too.
-- *The idle freeze.* The opposite scar: because gravity journals nothing,
-  a paint gate that read only the journal froze the falling piece while
-  the player idled (chapter 15). Silence in the speaker forced a
-  *spokesman* in the paint gate.
+- *Gravity's blips.* A fall a second, journaled, is a blip a second. The rule
+  is silent (`loud?` — chapter 14) and its *price* is silent too.
+- *The idle freeze.* Because gravity journals nothing, a paint gate that read
+  only the journal froze the falling piece while the player idled (chapter
+  15). Silence in the speaker forced a *spokesman* in the paint gate.
+- *The repeat buzz.* The host's DAS pump spends a held key every 40ms, and
+  both the held slide and the held soft drop journaled a `(moved)` per tick —
+  `"move"` is 0.03s long, so one every 0.04s is not a blip but a 75%-duty
+  buzz, for as long as the key is down. The fix is the pump's own
+  distinction: a repeat is a tick, so it goes quiet (chapter 14.2's
+  `loud?`/`paid?` split, which is also what let the player's descent stop
+  borrowing the slide's timbre). And it cost a spokesman *again* — with the
+  journal silent, `*dirty*` had to become the paint gate's witness to a
+  glide, or the piece would have frozen exactly as it had the first time.
 
-The pairing is the takeaway: **when you silence a rule, name what else
-carries its news** — another signal, another channel, or an explicit
-acceptance that the player will not see it tick.
+The pairing of the last two scars is the takeaway: silencing a channel does
+not remove the news, it **relocates** it. Whoever used to ask the journal "did
+anything happen?" must now be answered by whoever knows.
 
 ## 16.5 Silence is a decision
 
@@ -198,9 +207,14 @@ The audit habit that keeps the table honest: every spec row must have a
 call site, and every call site a spec row. This game's table grew three
 orphans before an audit caught them — `"tetris"`, `"soft-drop"`, and
 `"hard-drop"` were defined and never played (the clear blipped for every
-clear; soft drops spoke through `"move"`). The audit is one grep per side:
-names in `BEEP_SPECS`, names in `sfx!` calls. An orphan row is a mixing
-decision someone forgot to make.
+clear; soft drops spoke through `"move"`). All three are resolved now, in the
+three ways an orphan can be: `"tetris"` earned a call site (`headline-kind`,
+the clear's *size* choosing the fanfare); `"soft-drop"` earned one too, once
+the player's descent stopped borrowing the slide and became its own fact; and
+`"hard-drop"` was **retired**, because it was byte-identical to `"drop"` — the
+mix it proposed was the one already playing. An orphan row is a decision
+nobody made; a duplicate row is the same decision made twice. The audit is one
+grep per side: names in `BEEP_SPECS`, names in `sfx!` calls.
 
 ## 16.6 Escalation without a siren
 
@@ -235,9 +249,16 @@ the same host-as-data trick that pins the drawing (chapter 9).
    nothing. Play the lock blip *under* the clear headline for one frame
    and decide — by listening, then writing a comment — whether the mix
    got better or just busier.
-2. Add the `"soft-drop"` orphan's call site: give the soft drop its own
-   quieter blip (`260Hz, 0.025s`) distinct from the move, and prove with
-   the fake host that a held-down key no longer machine-guns `"move"`.
+2. ✓ **Done in this build.** The `"soft-drop"` orphan got its call site: the
+   player's descent became its own fact (`(soft-dropped)`) with its own
+   quieter blip (`260Hz, 0.025s`), and a held key no longer machine-guns
+   `"move"` — the fake-host pins live in `tests/scm/gameplay-tests.scm`.
+   *The follow-up worth arguing about:* the obvious alternative is a cooldown
+   in `effects.scm` (no two `"move"` blips within N ms). Write down the two
+   cases it gets wrong before you implement it — a deliberate fast tap
+   swallowed, and a buzz only half-muted — and notice *why*: the
+   press/repeat distinction exists only at the input edge, so a rate limiter
+   downstream is guessing at information it has already thrown away.
 3. Write the audit as a test: parse `BEEP_SPECS` and the Scheme sources,
    and assert every spec name has a call site and every call site a spec
    name. An orphan fails CI, not an afternoon.

@@ -136,6 +136,52 @@
     (host-release! "down")
     (host-run-frames! 1)))
 
+;; The speaker hears moments, not ticks. A press says its blip; the pump's
+;; repetitions say nothing (0.03s of tone every 0.04s is a buzz, not
+;; feedback). And the player's descent has a blip of its own now — chapter
+;; 16's `"soft-drop"` orphan, wired to the fact that earns it.
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(host-press! "down")
+(host-clock! 16 20)               ; 320ms: the delay burns, then repeats
+(host-run-frames! 20)
+(host-release! "down")
+(host-run-frames! 1)
+(tk-check "a soft drop says its own quiet blip, once"
+          (count (lambda (n) (string=? n "soft-drop")) (host-sfx-names))
+          1)
+(tk-check "and a held drop never machine-guns the move blip"
+          (count (lambda (n) (string=? n "move")) (host-sfx-names))
+          0)
+
+;; The same rule for a held slide: one blip for the press, silence for the
+;; glide — and the glide still happens (a silent move is not a frozen piece).
+(boot-into! 'marathon '())
+(set! *ai* #f)
+(let ((x0 (falling-x (game-active *st*))))
+  (host-press! "left")
+  (host-clock! 16 20)
+  (host-run-frames! 20)
+  (host-release! "left")
+  (host-run-frames! 1)
+  (tk-check "a held slide says its blip once"
+            (count (lambda (n) (string=? n "move")) (host-sfx-names))
+            1)
+  (tk-assert "and the glide still moved the piece"
+             (< (falling-x (game-active *st*)) x0)))
+
+;; The AI's hand is the machine's: it glides silently and slams audibly — a
+;; watcher who pressed `a` should hear it decide, not hear it glide.
+(boot-into! 'marathon '())
+(set! *ai* #t)
+(reset-ai!)
+(host-clock! 16 200)
+(host-run-frames! 200)
+(tk-assert "the AI played on" (> *lock-count* 0))
+(tk-check "the AI's slides are silent"
+          (count (lambda (n) (string=? n "move")) (host-sfx-names))
+          0)
+
 ;; Gravity is the clock's work, not a player's move: an idle match falls
 ;; silent. Level 1 pulls a row every 900ms, so 1.92s of idle time is two
 ;; rows — enough to prove the descent happened, and that it said nothing.

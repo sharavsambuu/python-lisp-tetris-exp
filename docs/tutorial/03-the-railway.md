@@ -110,17 +110,24 @@ a table.
 ## 3.3 The dispatcher is a table of compositions
 
 ```scheme
-(define (apply-command state cmd)
+(define* (apply-command state cmd (loud: loud? #t))
   (variant-match cmd
-    ((left)       ((>=> falling (cut try-shift <> -1 0)) state))
-    ((right)      ((>=> falling (cut try-shift <> 1 0)) state))
-    ((down)       ((>=> falling soft-fall) state))
+    ((left)       ((>=> falling (cut try-shift <> -1 0 loud?)) state))
+    ((right)      ((>=> falling (cut try-shift <> 1 0 loud?)) state))
+    ((down)       ((>=> falling (cut soft-fall <> loud?)) state))
     ((rotate-cw)  ((>=> falling (cut try-rotate <> 1)) state))
     ((hard-drop)  ((>=> falling hard-drop!) state))
     ((hold-piece) ((>=> falling hold-swap) state))
     ((restart)    (ok (restart-match state)))
     (else         (err (unknown-command)))))
 ```
+
+The `loud?` keyword is the one word three of these rows needed: the commands a
+*held* key can repeat (the two slides and the soft drop) must know whether this
+call is a press or the repeat pump's tick. It rides as a keyword rather than a
+fourth positional because every other caller — the AI, the tests, a burst —
+wants the default (`#t`, a hand's press), and a default nobody has to spell is
+a default nobody can get wrong.
 
 There is no orchestrating if/else: **the pipeline is the control flow.** The
 biggest composition in the game is the lock track — lock *then* spawn *then*
@@ -210,11 +217,12 @@ policy explicit in one fold.
 Time is just another caller:
 
 ```scheme
-;; One pull of descent: down a row, or — if the floor is there — the
-;; lock track. `loud?` decides whether the move is journaled: a player's
-;; soft-drop keypress is a fact worth a blip, but gravity is the clock's
-;; work, and an idle match should be silent.
-(define (fall-by-one state loud?)
+;; One pull of descent: down a row, or — if the floor is there — the lock
+;; track. Two questions travel with a pull, and they are deliberately
+;; separate: `loud?` — is this a *moment* worth announcing? and `paid?` —
+;; whose wage is the row? A press is loud and paid; a held key's repeat is
+;; quiet and paid; gravity is neither.
+(define (fall-by-one state loud? paid?)
   (let* ((p (game-active state))
          (ny (+ (falling-y p) 1)))
     (if (fits-at? state (falling-name p) (falling-rot p)
@@ -224,21 +232,26 @@ Time is just another caller:
                                                    (falling-x p) ny
                                                    (falling-rot p))
                              score: (+ (game-score state)
-                                       (drop-points 'soft 1)))))
-          (ok (if loud? (with-event s* (moved)) s*)))
+                                       (if paid?
+                                           (policy-soft-row (policy-of state))
+                                           0)))))
+          (ok (if loud? (with-event s* (soft-dropped)) s*)))
         (lock-and-spawn state))))
 
-;; The soft-drop key's arrow: the shared descent, announced.
-(define (soft-fall state)
-  (fall-by-one state #t))
+;; The soft-drop key's arrow: the shared descent, always paid for, announced
+;; only when the caller says it is a moment.
+(define (soft-fall state loud?)
+  (fall-by-one state loud? #t))
 ```
 
 A held key's `down` and a due gravity tick go through the *same* descent, so
 there is exactly one lock path, one spawn path, one game-over path. When a bug
 report says "the piece locked twice", there is one place to look. The one
-thing the two callers do not share is the journal entry: gravity passes
-`loud? #f`, so an idle match falls in silence; the player's keypress journals
-`(moved)` and earns its blip.
+thing the callers do not share is the journal entry: gravity passes `loud? #f`
+(and earns nothing), a *press* is loud and paid, and a held key's *repeat* is
+paid but silent — the pump spends a key every 40ms, and a blip a tick is a
+buzz. Chapter 14.2 tells the story of why that distinction had to become two
+flags rather than one.
 
 The harder compositions are worth reading as prose. `hard-drop!` is a
 conditional pipeline: fall the whole distance, *then* lock — unless the

@@ -225,6 +225,22 @@
        (- (falling-x (game-active gf)) 1))
 (check (tag-of (car (game-journal g1))) 'moved)
 
+;; A soft drop is its own fact: a *row* by a player's hand, where a slide is a
+;; column. Two gestures, two facts — the ear tells them apart without the edge
+;; remembering which key caused a move.
+(define g-soft (ok-value (apply-command gf (down))))
+(check (falling-y (game-active g-soft)) (+ (falling-y (game-active gf)) 1))
+(check (tag-of (car (game-journal g-soft))) 'soft-dropped)
+(check (game-score g-soft) (+ (game-score gf) 1))
+
+;; A repeat is a tick, not a moment: the same move, the same wage, no fact.
+;; Muting a repeat must never turn it into gravity — the player still earns
+;; the row (this is why `loud?` and `paid?` are two questions, not one).
+(define g-repeat (ok-value (apply-command gf (down) loud: #f)))
+(check (falling-y (game-active g-repeat)) (+ (falling-y (game-active gf)) 1))
+(check (game-journal g-repeat) (game-journal gf))
+(check (game-score g-repeat) (+ (game-score gf) 1))
+
 ;; A wall is a named refusal — eleven lefts still leave the piece legal.
 (define g-wall
   (let loop ((s gf) (i 0))

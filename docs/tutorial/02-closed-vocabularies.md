@@ -62,11 +62,11 @@ Every dispatch in the game is a `variant-match`:
 ```
 
 ```scheme
-(define (apply-command state cmd)
+(define* (apply-command state cmd (loud: loud? #t))
   (variant-match cmd
-    ((left)       ((>=> falling (cut try-shift <> -1 0)) state))
-    ((right)      ((>=> falling (cut try-shift <> 1 0)) state))
-    ((down)       ((>=> falling soft-fall) state))
+    ((left)       ((>=> falling (cut try-shift <> -1 0 loud?)) state))
+    ((right)      ((>=> falling (cut try-shift <> 1 0 loud?)) state))
+    ((down)       ((>=> falling (cut soft-fall <> loud?)) state))
     ((rotate-cw)  ((>=> falling (cut try-rotate <> 1)) state))
     ((rotate-ccw) ((>=> falling (cut try-rotate <> -1)) state))
     ((hard-drop)  ((>=> falling hard-drop!) state))
@@ -106,12 +106,18 @@ own arm, and the `else` stays silent because a fact with no sound is normal:
 (define (sfx-event! ev)
   (variant-match ev
     ((moved) (sfx! "move"))
+    ((soft-dropped) (sfx! "soft-drop"))
     ((rotated) (sfx! "rotate"))
     ((dropped _) (sfx! "drop"))
     ((locked _) (sfx! "lock"))
     ((hold-swapped) (sfx! "hold"))
     (else #f)))
 ```
+
+`(moved)` and `(soft-dropped)` sit on adjacent rows on purpose: a slide moves a
+*column* and a soft drop moves a *row*, and two gestures earn two sounds — one
+fact per gesture is what keeps the edge from having to remember which key made
+a move.
 
 Note that a *refused* command has no row here, and should not: a refusal is
 `(err refusal)`, not a fact about the world — nothing happened, so the journal

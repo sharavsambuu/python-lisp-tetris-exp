@@ -19,6 +19,7 @@
   (import (scheme base)
           (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
           (srfi 26)
+          (srfi 89)
           (tetris result)
           (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
           (tetris commands) (tetris kicks) (tetris scoring) (tetris gravity))
@@ -110,17 +111,18 @@
     ;;  The arrows                                                         ;;
     ;; ------------------------------------------------------------------ ;;
 
-    ;; Slide by (dx dy), or refuse on a wall.
-    (define (try-shift state dx dy)
+    ;; Slide by (dx dy), or refuse on a wall. `loud?` decides whether the move
+    ;; is journaled: a player's key press is a moment worth a blip, a held
+    ;; key's repeat is the pump's tick — the same distinction gravity keeps.
+    (define (try-shift state dx dy loud?)
       (let* ((p (game-active state))
              (nx (+ dx (falling-x p)))
              (ny (+ dy (falling-y p))))
         (if (fits-at? state (falling-name p) (falling-rot p) nx ny)
-            (ok (with-event
-                 (game-with state
-                            active: (make-falling (falling-name p) nx ny
-                                                  (falling-rot p)))
-                 (moved)))
+            (let ((s* (game-with state
+                                 active: (make-falling (falling-name p) nx ny
+                                                       (falling-rot p)))))
+              (ok (if loud? (with-event s* (moved)) s*)))
             (err (wall)))))
 
     ;; Rotate with SRS kicks: try each nudge in the table's order, and the
@@ -184,12 +186,18 @@
                            0))))))
 
     ;; One pull of descent: down a row, or — if the floor is there — the
-    ;; lock track. `loud?` decides whether the move is journaled: a
-    ;; player's soft-drop keypress is a fact worth a blip, but gravity is
-    ;; the clock's work, and an idle match should be silent. The same flag
-    ;; prices the fall: **gravity never pays** — the soft-drop row rate is
-    ;; the *player's* wage, and the clock earns nothing in any mode.
-    (define (fall-by-one state loud?)
+    ;; lock track. Two questions travel with a pull, and they are deliberately
+    ;; separate, because answering them with one flag muted a player's repeat
+    ;; into a clock tick:
+    ;;
+    ;;   `loud?` — is this a *moment* worth announcing? A key press is; a held
+    ;;   key's repeat and gravity's own pull are not (a blip a tick is a buzz).
+    ;;
+    ;;   `paid?` — whose wage is the row? The **player's** key earns the mode's
+    ;;   soft-drop row rate, and the clock earns nothing in any mode. Muting a
+    ;;   repeat must never turn it into gravity: the wage does not depend on
+    ;;   the volume.
+    (define (fall-by-one state loud? paid?)
       (let* ((p (game-active state))
              (ny (+ (falling-y p) 1)))
         (if (fits-at? state (falling-name p) (falling-rot p)
@@ -199,16 +207,18 @@
                                                        (falling-x p) ny
                                                        (falling-rot p))
                                  score: (+ (game-score state)
-                                           (if loud?
+                                           (if paid?
                                                (policy-soft-row
                                                 (policy-of state))
                                                0)))))
-              (ok (if loud? (with-event s* (moved)) s*)))
+              (ok (if loud? (with-event s* (soft-dropped)) s*)))
             (lock-and-spawn state))))
 
-    ;; The soft-drop key's arrow: the shared descent, announced.
-    (define (soft-fall state)
-      (fall-by-one state #t))
+    ;; The soft-drop key's arrow: the shared descent, always paid for, and
+    ;; announced only when the caller says it is a moment — a press is, a
+    ;; repeat is not (the pump's 40ms cadence would be a 25-blip-a-second buzz).
+    (define (soft-fall state loud?)
+      (fall-by-one state loud? #t))
 
     ;; Merge the active piece into the board, collapse any full rows, and
     ;; re-level. One arrow: lock is a single indivisible fact of the domain.
@@ -414,7 +424,7 @@
       (let loop ((s state) (i 0))
         (if (or (>= i n) (not (playing? s)))
             (ok s)
-            (result-bind (fall-by-one s #f) (cut loop <> (+ i 1))))))
+            (result-bind (fall-by-one s #f #f) (cut loop <> (+ i 1))))))
 
     ;; One frame of world time. The bank is updated even when no tick is due,
     ;; so nothing accumulates out of sight — and the match's clock runs while
@@ -548,11 +558,18 @@
     ;; One command, one railway. Movement commands pass the falling gate
     ;; first; restart is always welcome; the closed command set means the
     ;; else arm is a named refusal, never a guess.
-    (define (apply-command state cmd)
+    ;;
+    ;; `loud?` (a keyword, defaulting to #t because a hand's press is the
+    ;; normal case) rides the three commands a *held* key can repeat — the two
+    ;; slides and the soft drop. One-shot commands ignore it: a rotate, a slam,
+    ;; a hold and a restart have no repeat to be quiet about, and the pump
+    ;; never delivers one. The edge is what knows whether an event was a press
+    ;; or a repeat, so the edge is what answers the question.
+    (define* (apply-command state cmd (loud: loud? #t))
       (variant-match cmd
-        ((left)       ((>=> falling (cut try-shift <> -1 0)) state))
-        ((right)      ((>=> falling (cut try-shift <> 1 0)) state))
-        ((down)       ((>=> falling soft-fall) state))
+        ((left)       ((>=> falling (cut try-shift <> -1 0 loud?)) state))
+        ((right)      ((>=> falling (cut try-shift <> 1 0 loud?)) state))
+        ((down)       ((>=> falling (cut soft-fall <> loud?)) state))
         ((rotate-cw)  ((>=> falling (cut try-rotate <> 1)) state))
         ((rotate-ccw) ((>=> falling (cut try-rotate <> -1)) state))
         ((hard-drop)  ((>=> falling hard-drop!) state))
@@ -563,6 +580,8 @@
     ;; A burst of commands: fold them through, and on a refusal *keep the
     ;; last good state and go on* — a wall does not cancel the rest of the
     ;; frame's input. The railway runs per command; the fold runs always.
+    ;; A burst is a frame's worth of one hand's intents, so each command keeps
+    ;; the default voice.
     (define (apply-commands state cmds)
       (fold (lambda (cmd acc)
               (let ((r (result-bind acc (cut apply-command <> cmd))))

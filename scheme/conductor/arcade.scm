@@ -457,9 +457,18 @@
                               (duel-with-right *duel*
                                 (ai-step-match! (duel-right *duel*)
                                                 (persona-weights *persona*)
+                                                ;; The solo path triples its
+                                                ;; budget when the future is
+                                                ;; priced (160 scorings in ~9
+                                                ;; frames); the duel must pay
+                                                ;; the same triple or a slow
+                                                ;; persona never finishes the
+                                                ;; search before the piece
+                                                ;; lands and falls straight.
                                                 (max 1
                                                      (* (persona-speed *persona*)
-                                                        *r-throttle*))
+                                                        *r-throttle*
+                                                        (if *ai-lookahead* 3 1)))
                                                 *r-lock-count*)))
                         #f)
                     (set! *duel*

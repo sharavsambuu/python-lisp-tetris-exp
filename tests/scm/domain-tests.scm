@@ -988,9 +988,9 @@
 
 ;; The probe: lines plus four lines' worth of pressure a side, signed
 ;; left-minus-right. Even sides read zero, whatever their pressure.
-(check (duel-gap 3 3 0.2 0.2) 0)
-(check (duel-gap 5 3 0.0 0.0) 2)
-(check (duel-gap 3 5 0.0 0.0) -2)
+(check (duel-gap 3 3 0.2 0.2) 0.0)
+(check (duel-gap 5 3 0.0 0.0) 2.0)
+(check (duel-gap 3 5 0.0 0.0) -2.0)
 (assert "pressure weighs four lines a side"
         (= (duel-gap 0 4 1.0 0.0) 0))          ; a full board ≈ a 4-line lead
 
@@ -1018,7 +1018,8 @@
 
 ;; The pace handicap is the same move, damped — the quiet actuator.
 (let ((l (make-leash pace-gain: 0.5)))
-  (check (leash-pace l 1) 1)
+  ;; pace-gain 0.5 is inexact, so leash-pace reads 1.0, not 1.
+  (check (leash-pace l 1) 1.0)
   (let ((p (leash-pace l 1.5)))
     (assert "the pace moves less than the budget" (< (abs (- p 1)) 0.5)))
   (assert "a slowed AI gets a lighter well, not a faster one"
@@ -1030,7 +1031,8 @@
         (< (paced-interval 1 0.5) (drop-interval 1)))
 (assert "a cool pace lengthens it"
         (> (paced-interval 1 1.5) (drop-interval 1)))
-(check (paced-interval 30 0.5) 60)
+;; In an inexact pace, the floor holds inexactly too: 60.0, not 60.
+(check (paced-interval 30 0.5) 60.0)
 
 ;; The pace rides on the match record: default 1, settable as a value.
 (check (game-pace (new-game)) 1)

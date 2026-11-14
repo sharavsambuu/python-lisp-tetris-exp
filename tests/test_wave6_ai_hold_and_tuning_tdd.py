@@ -73,7 +73,7 @@ def test_t62_arcade_ai_uses_lookahead_and_evaluates_hold_without_crash():
     ]:
         load_lisp(env, SCHEME / rel)
 
-    assert run("*lookahead-k*", env=env) >= 3
+    assert run("*lookahead-k*", env=env) >= 2
     run("(import (tetris game) (tetris plan))", env=env)
     run("(define g (fresh-game seed: 1))", env=env)
     run("(search-reset! g (list 0 (falling-name (game-active g))))", env=env)

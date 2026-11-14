@@ -465,10 +465,12 @@
                                                 ;; persona never finishes the
                                                 ;; search before the piece
                                                 ;; lands and falls straight.
-                                                (max 1
-                                                     (* (persona-speed *persona*)
-                                                        *r-throttle*
-                                                        (if *ai-lookahead* 3 1)))
+                                                (min 3
+                                                     (max 1
+                                                          (quotient
+                                                           (* (persona-speed *persona*)
+                                                              *r-throttle*)
+                                                           2)))
                                                 *r-lock-count*)))
                         #f)
                     (set! *duel*
@@ -544,7 +546,7 @@
     ;; priced, and how many rows of fall a piece needs before the future
     ;; is worth its budget.
     (define *ai-lookahead* #t)
-    (define *lookahead-k* 3)
+    (define *lookahead-k* 2)
     (define *lookahead-floor* 6)
 
     (define *search-key* #f)     ;; piece key (lock count + kind) the search opened for
@@ -939,19 +941,21 @@
           (if (>= r 4)
               best
               (let ((shape (piece-cells name r)))
-                (let x-loop ((x 0) (best* best))
-                  (if (>= x 10)
+                (let x-loop ((xs '(2 5 7)) (best* best))
+                  (if (null? xs)
                       (rot-loop (+ r 1) best*)
-                      (if (not (shape-fits-at? b shape x sy))
-                          (x-loop (+ x 1) best*)
-                          (let* ((ly (landing-row/hts shape x sy hts rows))
-                                 (sc (and ly (placement-score ws hts shape x ly rows)))
-                                 (next-best (if (and sc (or (not best*) (> sc best*))) sc best*)))
-                            (x-loop (+ x 1) next-best))))))))))
+                      (let ((x (car xs)))
+                        (if (not (shape-fits-at? b shape x sy))
+                            (x-loop (cdr xs) best*)
+                            (let* ((ly (landing-row/hts shape x sy hts rows))
+                                   (sc (and ly (placement-score ws hts shape x ly rows)))
+                                   (next-best (if (and sc (or (not best*) (> sc best*))) sc best*)))
+                              (x-loop (cdr xs) next-best)))))))))))
 
     (define (ai-should-hold? st ws cur-best)
       (and (game-can-hold st)
            cur-best
+           (< cur-best 0.5)
            *search-hts*
            (let ((alt (or (game-hold st) (car (bag-peek (game-bag st) 1)))))
              (and alt

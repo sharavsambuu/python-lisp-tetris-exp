@@ -544,7 +544,7 @@
     ;; priced, and how many rows of fall a piece needs before the future
     ;; is worth its budget.
     (define *ai-lookahead* #t)
-    (define *lookahead-k* 5)
+    (define *lookahead-k* 3)
     (define *lookahead-floor* 6)
 
     (define *search-key* #f)     ;; piece key (lock count + kind) the search opened for
@@ -934,24 +934,26 @@
     ;; so the search state above stays shared; the lock count and the
     ;; weights and the placement budget travel with the side.
     (define (best-1ply-score b hts rows name ws)
-      (let ((shapes (list-tabulate 4 (lambda (r) (piece-cells name r)))))
-        (let loop ((i 0) (best #f))
-          (if (>= i 40)
+      (let ((sy spawn-y))
+        (let rot-loop ((r 0) (best #f))
+          (if (>= r 4)
               best
-              (let* ((rot (quotient i 10))
-                     (x (remainder i 10))
-                     (cells (list-ref shapes rot))
-                     (ly (landing-y b name rot x)))
-                (if (not ly)
-                    (loop (+ i 1) best)
-                    (let* ((sc (placement-score b hts cells x ly rows ws))
-                           (best* (if (or (not best) (> sc best)) sc best)))
-                      (loop (+ i 1) best*))))))))
+              (let ((shape (piece-cells name r)))
+                (let x-loop ((x 0) (best* best))
+                  (if (>= x 10)
+                      (rot-loop (+ r 1) best*)
+                      (if (not (shape-fits-at? b shape x sy))
+                          (x-loop (+ x 1) best*)
+                          (let* ((ly (landing-row/hts shape x sy hts rows))
+                                 (sc (and ly (placement-score ws hts shape x ly rows)))
+                                 (next-best (if (and sc (or (not best*) (> sc best*))) sc best*)))
+                            (x-loop (+ x 1) next-best))))))))))
 
     (define (ai-should-hold? st ws cur-best)
       (and (game-can-hold st)
            cur-best
-           (let ((alt (or (game-hold st) (bag-peek (game-bag st)))))
+           *search-hts*
+           (let ((alt (or (game-hold st) (car (bag-peek (game-bag st) 1)))))
              (and alt
                   (not (eq? alt (falling-name (game-active st))))
                   (let ((alt-best (best-1ply-score (game-board st)

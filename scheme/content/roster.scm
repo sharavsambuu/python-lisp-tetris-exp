@@ -61,14 +61,14 @@
                      name: "The Wall"
                      title: "waited for your mistake"
                      weights: (weights 2.0 3.6 1.2 1.5 0.8 0.8)
-                     speed: 8
+                     speed: 6
                      band: 0.10)
        ;; Fast and filthy: rows now, holes be damned, dig never.
        (make-persona id: 'blitz
                      name: "Blitz"
                      title: "does not dig, does not care"
                      weights: (weights 1.4 1.6 0.5 0.4 2.8 0.6)
-                     speed: 16
+                     speed: 12
                      band: 0.18)
        ;; The default weights, the slowest clock, the tightest leash —
        ;; the long game, played patiently.
@@ -76,14 +76,14 @@
                      name: "The Scholar"
                      title: "played the long game"
                      weights: (weights 2.2 2.8 0.6 0.7 1.6 0.9)
-                     speed: 5
+                     speed: 4
                      band: 0.06)
        ;; Whatever you bring, it returns — mid dials, mid clock.
        (make-persona id: 'mirror
                      name: "The Mirror"
                      title: "whatever you do, back at you"
                      weights: (weights 2.0 2.6 0.8 0.8 2.0 0.8)
-                     speed: 12
+                     speed: 9
                      band: 0.14)))
 
     (define (persona-ids) (map persona-id roster))

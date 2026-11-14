@@ -30,8 +30,11 @@
 ;;; Public names: arcade-main.
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+        (srfi 18)
         (srfi 26)
         (srfi 88)
+        (srfi 158)
+        (srfi 190)
         (tetris result)
         (tetris geometry) (tetris board) (tetris bag) (tetris modes) (tetris game)
         (tetris duel) (tetris roster)
@@ -602,38 +605,47 @@
       (set! *plan-x* 3)
       (set! *plan-rot* 0))
 
+    (define *search-coro* #f)
+
+    (define-coroutine-generator (make-search-coro st ws budget)
+      (let sweep-loop ()
+        (if (not (score-sweep! st ws budget))
+            (begin (yield 'pending) (sweep-loop))
+            #f))
+      (pick-candidates!)
+      (when (and (eq? *search-phase* 'futures)
+                 *search-ply2?*
+                 (not *search-shapes2*))
+        (build-next-shapes! st))
+      (let futures-loop ()
+        (when (not (= *search-dead-stamp* *search-cands-stamp*))
+          (pick-candidates!))
+        (when (eq? *search-phase* 'futures)
+          (if (not (eq? (price-futures! st ws budget) 'done))
+              (begin (yield 'pending) (futures-loop))
+              #f)))
+      (yield (finish!)))
+
     (define (best-placement st ws budget locks)
       (if (not (game-active st))
           #f
           (let ((key (list locks (falling-name (game-active st)))))
             (when (or (not (equal? key *search-key*))
-                      (not (eq? (game-board st) *search-board*)))
-              (search-reset! st key))
-            (when (and (eq? *search-phase* 'futures)
-                       *search-ply2?*
-                       (not *search-shapes2*))
-              (build-next-shapes! st))
-            ;; A death in the steering changed the dead list after the
-            ;; candidates were picked: re-pick from the CACHED scores —
-            ;; no placement is scored twice for a steering refusal — and
-            ;; price any newcomer's future.
-            (when (and (not (eq? *search-phase* 'sweep))
+                      (not (eq? (game-board st) *search-board*))
+                      (not *search-coro*))
+              (search-reset! st key)
+              (set! *search-coro* (make-search-coro st ws budget)))
+            ;; Re-pick if steering invalidated a candidate after futures finished.
+            (when (and (eq? *search-phase* 'done)
                        (not (= *search-dead-stamp* *search-cands-stamp*)))
-              (pick-candidates!))
-            (case *search-phase*
-              ((sweep)
-               (if (score-sweep! st ws budget)
-                   (begin
-                     (pick-candidates!)
-                     (if (eq? *search-phase* 'done)
-                         (finish!)
-                         'pending))
-                   'pending))
-              ((futures)
-               (if (eq? (price-futures! st ws budget) 'done)
-                   (finish!)
-                   'pending))
-              (else (finish!))))))
+              (pick-candidates!)
+              (if (eq? *search-phase* 'futures)
+                  (set! *search-coro* (make-search-coro st ws budget))
+                  #f))
+            (if (eq? *search-phase* 'done)
+                (finish!)
+                (let ((v (*search-coro*)))
+                  (if (eof-object? v) (finish!) v))))))
 
     ;; A fresh piece (or a board moved under it): the search opens again.
     ;; The settled columns, the shapes, the score vector — read or built
@@ -643,6 +655,7 @@
     (define (search-reset! st key)
       (set! *search-i* 0)
       (set! *search-phase* 'sweep)
+      (set! *search-coro* #f)
       (set! *search-scores* (make-vector 40 #f))
       (set! *search-dead* (make-vector 40 #f))
       (set! *search-dead-stamp* 0)

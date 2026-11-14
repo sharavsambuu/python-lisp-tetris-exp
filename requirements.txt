@@ -1,3 +1,3 @@
 pygame-ce==2.5.8
-git+https://github.com/sharavsambuu/shs-python-scheme-dsl.git@v0.2.3
+git+https://github.com/sharavsambuu/shs-python-scheme-dsl.git@v0.3.0
 

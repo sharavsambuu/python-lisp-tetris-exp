@@ -124,6 +124,17 @@
                        (challenge-by-id "cheese-five")
                        (challenge-by-id "thirty-sec")
                        (challenge-by-id "cheese-ten")
+                       (challenge-by-id "sprint-40")))
+       (campaign "dig-master" "Dig Master"
+                 "Carve through layers of garbage rows under pressure."
+                 (list (challenge-by-id "cheese-five")
+                       (challenge-by-id "cheese-ten")
+                       (challenge-by-id "cheese-twenty")))
+       (campaign "speed-demon" "Speed Demon"
+                 "Race the clock in sprints and blitzes."
+                 (list (challenge-by-id "twenty")
+                       (challenge-by-id "thirty-sec")
+                       (challenge-by-id "one-minute")
                        (challenge-by-id "sprint-40")))))
 
     (define (campaigns) *campaigns*)

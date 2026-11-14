@@ -209,7 +209,10 @@
               ;; just left".
               (view-clear-beam! 'left rows)))
            ((dropped d)
+            (if (>= d 2) (view-drop-trail! 'left d) #f)
             (if (>= d 6) (fx-thud! *slam-shake-px*) #f))
+           ((locked _)
+            (view-lock-flash! 'left))
            ((hold-swapped) (view-hold-pulse!))
            ((combo n) (view-combo-pop! n))
            ((b2b) (view-b2b-pop!))

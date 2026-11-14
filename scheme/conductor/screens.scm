@@ -136,25 +136,27 @@
     ;; content; the language row's label re-reads the live locale, so the
     ;; menu itself speaks the language it is about to switch to.
     (define (title-menu)
-      (make-menu
-       (append
-        (map (lambda (c)
-               (list (string-append (campaign-title-tr c)
-                                    "  ("
-                                    (number->string
-                                     (length (campaign-levels c)))
-                                    " "
-                                    (tr 'menu-levels-word)
-                                    ")")
-                     (cons 'campaign c)))
-             (campaigns))
-        (list (list (tr 'menu-versus) '(versus))
-              (list (tr 'menu-free-play) '(free-play))
-              (list (string-append (tr 'menu-language)
-                                   ": "
-                                   (locale-label (current-locale)))
-                    '(language))
-              (list (tr 'menu-quit) '(quit))))))
+      (let* ((cs (campaigns))
+             (camp-row (lambda (c)
+                         (list (string-append (campaign-title-tr c)
+                                              "  ("
+                                              (number->string
+                                               (length (campaign-levels c)))
+                                              " "
+                                              (tr 'menu-levels-word)
+                                              ")")
+                               (cons 'campaign c)))))
+        (make-menu
+         (append
+          (if (null? cs) '() (list (camp-row (car cs))))
+          (list (list (tr 'menu-versus) '(versus))
+                (list (tr 'menu-free-play) '(free-play))
+                (list (string-append (tr 'menu-language)
+                                     ": "
+                                     (locale-label (current-locale)))
+                      '(language))
+                (list (tr 'menu-quit) '(quit)))
+          (if (null? cs) '() (map camp-row (cdr cs)))))))
 
     ;; The campaign ladder: each rung shows its title, and a checkmark when
     ;; this session has already won it.

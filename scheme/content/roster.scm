@@ -60,31 +60,31 @@
        (make-persona id: 'wall
                      name: "The Wall"
                      title: "waited for your mistake"
-                     weights: (weights 2.0 3.5 1.2 1.5 0.2)
-                     speed: 3
-                     band: 0.06)
+                     weights: (weights 2.0 3.6 1.2 1.5 0.8 0.8)
+                     speed: 8
+                     band: 0.10)
        ;; Fast and filthy: rows now, holes be damned, dig never.
        (make-persona id: 'blitz
                      name: "Blitz"
                      title: "does not dig, does not care"
-                     weights: (weights 1.2 1.0 0.3 0.3 2.5)
-                     speed: 12
-                     band: 0.12)
+                     weights: (weights 1.4 1.6 0.5 0.4 2.8 0.6)
+                     speed: 16
+                     band: 0.18)
        ;; The default weights, the slowest clock, the tightest leash —
        ;; the long game, played patiently.
        (make-persona id: 'scholar
                      name: "The Scholar"
                      title: "played the long game"
-                     weights: (weights 2.0 2.5 0.5 0.6 1.0)
-                     speed: 2
-                     band: 0.02)
+                     weights: (weights 2.2 2.8 0.6 0.7 1.6 0.9)
+                     speed: 5
+                     band: 0.06)
        ;; Whatever you bring, it returns — mid dials, mid clock.
        (make-persona id: 'mirror
                      name: "The Mirror"
                      title: "whatever you do, back at you"
-                     weights: (weights 1.8 2.2 0.6 0.7 1.4)
-                     speed: 8
-                     band: 0.08)))
+                     weights: (weights 2.0 2.6 0.8 0.8 2.0 0.8)
+                     speed: 12
+                     band: 0.14)))
 
     (define (persona-ids) (map persona-id roster))
 

@@ -76,9 +76,13 @@
         (mode-sprint           "sprint"                          "спринт")
         (mode-ultra            "ultra"                           "ультра")
         (mode-cheese           "cheese"                          "чийз")
+        (mode-survival         "survival"                        "тэсвэр")
+        (mode-zen              "zen"                             "чөлөөт дадлага")
 
         ;; -- campaigns, challenges, goals (keys = the content ids) ----
         (campaign-ascent       "The Ascent"                      "Өгсөлт")
+        (campaign-dig-master   "Dig Master"                      "Газар ухагч")
+        (campaign-speed-demon  "Speed Demon"                     "Хурдны сорилт")
         (challenge-first-lines "First Lines"                     "Эхний мөрүүд")
         (challenge-ten-lines   "Ten Lines"                       "Арван мөр")
         (challenge-twenty      "Twenty"                          "Хорь")

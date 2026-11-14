@@ -111,6 +111,23 @@
     ;;  The arrows                                                         ;;
     ;; ------------------------------------------------------------------ ;;
 
+    (define lock-delay-ms 500)
+    (define max-lock-resets 15)
+
+    (define (grounded? state)
+      (let ((p (game-active state)))
+        (and p
+             (not (fits-at? state (falling-name p) (falling-rot p)
+                            (falling-x p) (+ (falling-y p) 1))))))
+
+    (define (reset-lock-on-move state)
+      (cond ((not (grounded? state))
+             (game-with state lock-ms: 0))
+            ((< (game-lock-resets state) max-lock-resets)
+             (game-with state lock-ms: 0
+                        lock-resets: (+ (game-lock-resets state) 1)))
+            (else state)))
+
     ;; Slide by (dx dy), or refuse on a wall. `loud?` decides whether the move
     ;; is journaled: a player's key press is a moment worth a blip, a held
     ;; key's repeat is the pump's tick — the same distinction gravity keeps.
@@ -119,9 +136,10 @@
              (nx (+ dx (falling-x p)))
              (ny (+ dy (falling-y p))))
         (if (fits-at? state (falling-name p) (falling-rot p) nx ny)
-            (let ((s* (game-with state
-                                 active: (make-falling (falling-name p) nx ny
-                                                       (falling-rot p)))))
+            (let ((s* (reset-lock-on-move
+                       (game-with state
+                                  active: (make-falling (falling-name p) nx ny
+                                                        (falling-rot p))))))
               (ok (if loud? (with-event s* (moved)) s*)))
             (err (wall)))))
 
@@ -141,8 +159,9 @@
                      (ny (+ (falling-y p) (cdr k))))
                 (if (fits-at? state name to nx ny)
                     (ok (with-event
-                         (game-with state
-                                    active: (make-falling name nx ny to))
+                         (reset-lock-on-move
+                          (game-with state
+                                     active: (make-falling name nx ny to)))
                          (rotated)))
                     (loop (cdr ks))))))))
 
@@ -234,7 +253,8 @@
                               (falling-x p) (falling-y p)))
              (b* (board-place (game-board state) (falling-name p) cells))
              (s1 (with-event
-                  (game-with state board: b* active: #f can-hold: #t)
+                  (game-with state board: b* active: #f can-hold: #t
+                             lock-ms: 0 lock-resets: 0)
                   (locked (falling-name p)))))
         ;; The rows go into the journal *as rows* — the edge's animation
         ;; paints where they were, so the fact must say where, not how many.
@@ -316,8 +336,11 @@
                         (cells-at name 0 (spawn-x-for name) spawn-y))
             (ok (with-event (game-with state active: p bag: bag)
                             (spawned name)))
-            (ok (with-event (game-with state active: p bag: bag phase: (over))
-                            (game-over))))))
+            (if (eq? (config-mode-tag (game-config state)) 'zen)
+                (ok (with-event (game-with state board: (make-board) active: p bag: bag)
+                                (spawned name)))
+                (ok (with-event (game-with state active: p bag: bag phase: (over))
+                                (game-over)))))))
 
     ;; Draw the next piece. The one way a game ends: a spawn that does not
     ;; fit. That is not a refusal — it is the over phase, announced in the
@@ -418,35 +441,56 @@
     ;;  Gravity — the clock's arrow                                        ;;
     ;; ------------------------------------------------------------------ ;;
 
-    ;; Run the ticks the bank paid for, stopping the moment the phase changes
-    ;; under us (a lock can end the game mid-burst).
+    ;; Run the gravity ticks the bank paid for, stopping cleanly if the piece
+    ;; reaches the floor (lock delay handles locking in `step-time`).
     (define (gravity-ticks state n)
       (let loop ((s state) (i 0))
-        (if (or (>= i n) (not (playing? s)))
+        (if (or (>= i n) (not (playing? s)) (grounded? s))
             (ok s)
             (result-bind (fall-by-one s #f #f) (cut loop <> (+ i 1))))))
 
     ;; One frame of world time. The bank is updated even when no tick is due,
     ;; so nothing accumulates out of sight — and the match's clock runs while
     ;; the phase is live, because an ultra is a race against exactly this
-    ;; number. The ultra's zero crosses into a victory here, on the clock's
-    ;; own track, the same way a sprint's target does on the lock's.
+    ;; number. A grounded piece accumulates up to `lock-delay-ms` (500ms)
+    ;; before locking, giving late slides and rotations room to breathe.
     (define (step-time state dt)
       (if (not (playing? state))
           (ok state)
-          (let-values (((bank ticks)
-                        (advance-bank (game-bank state)
-                                      dt
-                                      (paced-interval (game-level state)
-                                                      (game-pace state)))))
-            (result-bind
-             (if (= ticks 0)
-                 (ok state)
-                 (result-map (gravity-ticks state ticks)
-                             (cut game-with <> bank: bank)))
-             (lambda (s)
-               (check-victory
-                (game-with s clock: (+ (game-clock s) dt) bank: bank)))))))
+          (let ((was-grounded (grounded? state)))
+            (let-values (((bank ticks)
+                          (advance-bank (game-bank state)
+                                        dt
+                                        (paced-interval (game-level state)
+                                                        (game-pace state)))))
+              (result-bind
+               (if (= ticks 0)
+                   (ok state)
+                   (result-map (gravity-ticks state ticks)
+                               (cut game-with <> bank: bank)))
+               (lambda (s)
+                 (let* ((old-clock (game-clock s))
+                        (new-clock (+ old-clock dt))
+                        (s-clocked (game-with s clock: new-clock bank: bank))
+                        (s-locked
+                         (if (grounded? s-clocked)
+                             (let ((lms (if was-grounded
+                                            (+ (game-lock-ms s-clocked) dt)
+                                            0)))
+                               (if (>= lms lock-delay-ms)
+                                   (lock-and-spawn (game-with s-clocked lock-ms: 0 lock-resets: 0))
+                                   (ok (game-with s-clocked lock-ms: lms))))
+                             (ok (game-with s-clocked lock-ms: 0)))))
+                   (result-bind
+                    (if (and (eq? (config-mode-tag (game-config s-clocked)) 'survival)
+                             (> (quotient new-clock 8000) (quotient old-clock 8000)))
+                        (result-bind s-locked
+                                     (lambda (s2)
+                                       (if (playing? s2)
+                                           (receive-garbage s2 1)
+                                           (ok s2))))
+                        s-locked)
+                    check-victory))))))))
 
     ;; A restart keeps the recipe and the random stream: the config is the
     ;; match's own, the bag continues where it was — a replay is a new board
@@ -475,6 +519,8 @@
                                b2b: #f
                                clock: 0
                                pace: 1
+                               lock-ms: 0
+                               lock-resets: 0
                                journal: '())))
         (let-values (((name bag*) (bag-next (game-bag state))))
           ;; The spawn law again: a board with no room for its first piece (a

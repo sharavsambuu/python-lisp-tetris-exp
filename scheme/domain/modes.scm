@@ -46,9 +46,9 @@
     ;; The closed four. Every dispatch on a mode anywhere in the program is a
     ;; variant-match over exactly these; a fifth way to play is a diff here
     ;; and nothing else.
-    (define-variant mode (marathon) (sprint) (ultra) (cheese))
+    (define-variant mode (marathon) (sprint) (ultra) (cheese) (survival) (zen))
 
-    (define (mode-names) '(marathon sprint ultra cheese))
+    (define (mode-names) '(marathon sprint ultra cheese survival zen))
 
     ;; The match recipe: which mode, and the three knobs a menu may tune.
     ;; The defaults are the classic match: endless marathon from level 1.
@@ -111,6 +111,8 @@
             ((sprint) (sprint))
             ((ultra) (ultra))
             ((cheese) (cheese))
+            ((survival) (survival))
+            ((zen) (zen))
             (else (unknown-mode-error name)))))
 
     ;; One option's value, checked against its bound. Out of range is a typo,
@@ -153,6 +155,8 @@
         ((sprint) "sprint")
         ((ultra) "ultra")
         ((cheese) "cheese")
+        ((survival) "survival")
+        ((zen) "zen")
         (else "unknown")))
 
     ;; The mode as a tag — the conductor's and the tests' way to ask which
@@ -163,6 +167,8 @@
         ((sprint) 'sprint)
         ((ultra) 'ultra)
         ((cheese) 'cheese)
+        ((survival) 'survival)
+        ((zen) 'zen)
         (else #f)))
 
     ;; Whether a match is a cheese dig — the question new-game and the
@@ -178,6 +184,8 @@
         ((sprint) "sprint")
         ((ultra) "ultra")
         ((cheese) "cheese")
+        ((survival) "survival")
+        ((zen) "zen")
         (else "marathon")))
 
     ;; The config's tunables as the options alist a fresh match takes —

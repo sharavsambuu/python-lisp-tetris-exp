@@ -46,6 +46,8 @@
           game-b2b
           game-clock
           game-pace
+          game-lock-ms
+          game-lock-resets
           game-journal
           game-with
           phase-playing?
@@ -171,7 +173,7 @@
     ;; value, so a replay replays the director's decisions too.
     (define-record-type game
       (make-game phase board active hold can-hold bag score lines level bank
-                 config combo b2b clock pace journal)
+                 config combo b2b clock pace lock-ms lock-resets journal)
       game?
       (phase game-phase)
       (board game-board)
@@ -188,6 +190,8 @@
       (b2b game-b2b)
       (clock game-clock)
       (pace game-pace)
+      (lock-ms game-lock-ms)
+      (lock-resets game-lock-resets)
       (journal game-journal))
 
     ;; The updater: every field defaults to the current value. A transition
@@ -208,8 +212,10 @@
                         (b2b: bb (game-b2b s))
                         (clock: cl (game-clock s))
                         (pace: pc (game-pace s))
+                        (lock-ms: lms (game-lock-ms s))
+                        (lock-resets: lr (game-lock-resets s))
                         (journal: j (game-journal s)))
-      (make-game p b a h c g sc ln lv bk cf co bb cl pc j))
+      (make-game p b a h c g sc ln lv bk cf co bb cl pc lms lr j))
 
     ;; Journal one event, newest first.
     (define (with-event s ev)
@@ -259,6 +265,8 @@
                      #f
                      0
                      1
+                     0
+                     0
                      '()))))
 
     ;; A game that is already falling: what the conductor boots into, and what

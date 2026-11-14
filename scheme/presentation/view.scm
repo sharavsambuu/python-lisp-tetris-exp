@@ -150,6 +150,7 @@
     ;; a flash the same length.
 
     (define *shake-px* 0.0)
+    (define *shake-phase* 1)
     (define *flash-rgb* #f)
     (define *flash-ms* 0)
 
@@ -182,6 +183,12 @@
     (define *garbage-l-n* 0)
     (define *garbage-r-ms* 0)
     (define *garbage-r-n* 0)
+    (define *drop-trail-l-ms* 0)
+    (define *drop-trail-l-d* 0)
+    (define *drop-trail-r-ms* 0)
+    (define *drop-trail-r-d* 0)
+    (define *lock-flash-l-ms* 0)
+    (define *lock-flash-r-ms* 0)
 
     (define (view-shake! px)
       (set! *shake-px* (max *shake-px* px)))
@@ -226,6 +233,16 @@
     (define (view-hold-pulse!)
       (set! *hold-pulse-ms* 150))
 
+    (define (view-drop-trail! side d)
+      (if (eq? side 'right)
+          (begin (set! *drop-trail-r-d* d) (set! *drop-trail-r-ms* 140))
+          (begin (set! *drop-trail-l-d* d) (set! *drop-trail-l-ms* 140))))
+
+    (define (view-lock-flash! side)
+      (if (eq? side 'right)
+          (set! *lock-flash-r-ms* 100)
+          (set! *lock-flash-l-ms* 100)))
+
     ;; A new screen is a clean slate: effects belong to the match that
     ;; earned them. Without this reset, a clear's beam outlived its match
     ;; and painted itself over the next board, and a flash burned through
@@ -233,6 +250,7 @@
     ;; shell shows a menu screen.
     (define (view-reset!)
       (set! *shake-px* 0.0)
+      (set! *shake-phase* 1)
       (set! *flash-rgb* #f)
       (set! *flash-ms* 0)
       (set! *score-shown* 0)
@@ -244,6 +262,12 @@
       (set! *garbage-l-n* 0)
       (set! *garbage-r-ms* 0)
       (set! *garbage-r-n* 0)
+      (set! *drop-trail-l-ms* 0)
+      (set! *drop-trail-l-d* 0)
+      (set! *drop-trail-r-ms* 0)
+      (set! *drop-trail-r-d* 0)
+      (set! *lock-flash-l-ms* 0)
+      (set! *lock-flash-r-ms* 0)
       (set! *hold-pulse-ms* 0)
       (set! *pop-ms* 0)
       (set! *pop-kind* #f)
@@ -325,6 +349,10 @@
           (> *beam-r-ms* 0)
           (> *garbage-l-ms* 0)
           (> *garbage-r-ms* 0)
+          (> *drop-trail-l-ms* 0)
+          (> *drop-trail-r-ms* 0)
+          (> *lock-flash-l-ms* 0)
+          (> *lock-flash-r-ms* 0)
           (> *hold-pulse-ms* 0)
           (> *pop-ms* 0)
           (not (= *score-shown* (game-score st)))
@@ -333,6 +361,9 @@
     (define (view-fx-step! dt st)
       (set! *fx-t* (+ *fx-t* (/ dt 1000.0)))
       (set! *shake-px* (max 0.0 (* *shake-px* 0.85)))
+      (if (> *shake-px* 0.05)
+          (set! *shake-phase* (- *shake-phase*))
+          (set! *shake-phase* 1))
       (set! *danger-paint-ms* (max 0 (- *danger-paint-ms* dt)))
       (if (and *flash-rgb* (> *flash-ms* 0))
           (set! *flash-ms* (max 0 (- *flash-ms* dt)))
@@ -348,6 +379,18 @@
           #f)
       (if (> *garbage-r-ms* 0)
           (set! *garbage-r-ms* (max 0 (- *garbage-r-ms* dt)))
+          #f)
+      (if (> *drop-trail-l-ms* 0)
+          (set! *drop-trail-l-ms* (max 0 (- *drop-trail-l-ms* dt)))
+          (set! *drop-trail-l-d* 0))
+      (if (> *drop-trail-r-ms* 0)
+          (set! *drop-trail-r-ms* (max 0 (- *drop-trail-r-ms* dt)))
+          (set! *drop-trail-r-d* 0))
+      (if (> *lock-flash-l-ms* 0)
+          (set! *lock-flash-l-ms* (max 0 (- *lock-flash-l-ms* dt)))
+          #f)
+      (if (> *lock-flash-r-ms* 0)
+          (set! *lock-flash-r-ms* (max 0 (- *lock-flash-r-ms* dt)))
           #f)
       (if (> *hold-pulse-ms* 0)
           (set! *hold-pulse-ms* (max 0 (- *hold-pulse-ms* dt)))
@@ -368,7 +411,9 @@
           (tint! *flash-rgb*)
           #f))
 
-    (define (shake-offset) (exact (round *shake-px*)))
+    (define (shake-x) (* *shake-phase* (exact (round *shake-px*))))
+    (define (shake-y) (* (- *shake-phase*) (quotient (exact (round *shake-px*)) 2)))
+    (define (shake-offset) (shake-x))
 
     ;; Grid coordinate -> pixel coordinate: scale by the cell size, then
     ;; add the board origin — and the shake, so a thud moves the whole
@@ -377,8 +422,8 @@
     ;; costs its macro expansion on every call — ~0.7ms against ~0.03ms
     ;; here. In an inner loop that is the difference between a frame and
     ;; a slideshow; `chain` keeps the one-shot pipelines (see centered-x).
-    (define (px x) (+ (lay board-x:) (* x (lay cell:)) (shake-offset)))
-    (define (py y) (+ (lay board-y:) (* y (lay cell:)) (shake-offset)))
+    (define (px x) (+ (lay board-x:) (* x (lay cell:)) (shake-x)))
+    (define (py y) (+ (lay board-y:) (* y (lay cell:)) (shake-y)))
 
     (define (cell-size) (- (lay cell:) 1))
 
@@ -471,7 +516,7 @@
 
     (define (draw-board-at! st ox)
       (draw-rects! (board-rects! st ox)
-                   (shake-offset) (shake-offset)))
+                   (shake-x) (shake-y)))
 
     (define (draw-board! st)
       (draw-board-at! st (lay board-x:)))
@@ -721,9 +766,18 @@
               (let* ((spec (car ls))
                      (s (car spec))
                      (size (car (cdr spec)))
-                     (x (centered-x 0 w s size)))
+                     (x (centered-x 0 w s size))
+                     (active? (and (>= (string-length s) 2)
+                                   (string=? (substring s 0 2) "> "))))
+                (if active?
+                    (let* ((bar-w (min (- w 32) 440))
+                           (bar-x (max 16 (quotient (- w bar-w) 2))))
+                      (draw-rect! bar-x (- y 3) bar-w (+ size 6) (color panel:)))
+                    #f)
                 (if (> (string-length s) 0)
-                    (draw-text-fit! x y s size (color text:) (- w 16))
+                    (draw-text-fit! x y s size
+                                    (if active? (color accent:) (color text:))
+                                    (- w 16))
                     #f)
                 (loop (cdr ls) (+ y size 14)))))))
 
@@ -765,12 +819,34 @@
       ;; they decay with the flash, so a tetris burns longer than a single.
       ;; Each side wears its own beam.
       (let* ((beam-rows (if (eq? side 'right) *beam-r-rows* *beam-rows*))
-             (beam-ms (if (eq? side 'right) *beam-r-ms* *beam-ms*)))
+             (beam-ms (if (eq? side 'right) *beam-r-ms* *beam-ms*))
+             (trail-ms (if (eq? side 'right) *drop-trail-r-ms* *drop-trail-l-ms*))
+             (trail-d (if (eq? side 'right) *drop-trail-r-d* *drop-trail-l-d*))
+             (lock-ms (if (eq? side 'right) *lock-flash-r-ms* *lock-flash-l-ms*)))
+        (if (and (> trail-ms 0) (> trail-d 0))
+            (let* ((w (* matrix-width (lay cell:)))
+                   (h (min (* matrix-height (lay cell:)) (* trail-d (lay cell:))))
+                   (bar-h (max 6 (quotient (* h trail-ms) 140)))
+                   (by (+ (lay board-y:) (- (* matrix-height (lay cell:)) bar-h))))
+              (draw-rect! (+ ox (quotient w 4)) by 3 bar-h '(130 180 230))
+              (draw-rect! (+ ox (quotient w 2)) by 3 bar-h '(170 210 250))
+              (draw-rect! (+ ox (quotient (* w 3) 4)) by 3 bar-h '(130 180 230)))
+            #f)
+        (if (> lock-ms 0)
+            (draw-frame! (- ox 3) (- (lay board-y:) 3)
+                         (+ (* matrix-width (lay cell:)) 5)
+                         (+ (* matrix-height (lay cell:)) 5)
+                         (color accent:))
+            #f)
         (if (and (> beam-ms 0) (not (null? beam-rows)))
-            (let ((w (* matrix-width (lay cell:))))
+            (let ((w (* matrix-width (lay cell:)))
+                  (psize (max 3 (quotient (* 6 beam-ms) 200))))
               (for-each (lambda (r)
-                          (draw-rect! ox (py r)
-                                      (- w 1) (cell-size) '(235 245 255)))
+                          (let ((ry (py r)))
+                            (draw-rect! ox ry (- w 1) (cell-size) '(235 245 255))
+                            (draw-rect! (+ ox 12) (+ ry 4) psize psize (color accent:))
+                            (draw-rect! (+ ox (quotient w 2)) (+ ry 6) psize psize '(255 255 255))
+                            (draw-rect! (+ ox (- w 18)) (+ ry 4) psize psize (color accent:))))
                         beam-rows))
             #f))
       (if (game-active st)

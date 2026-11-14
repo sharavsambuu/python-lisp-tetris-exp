@@ -14,7 +14,7 @@
 
   (begin
     ;; Milliseconds per gravity tick. Level 1 starts at 900ms and the curve
-    ;; tightens by 70ms a level until it hits the 60ms floor.
+    ;; tightens by 45ms a level until it hits the 60ms floor.
     ;;
     ;; A note on the feel this policy lives inside: the held-key repeat
     ;; cadence (DAS delay/interval) is deliberately NOT here — the host's
@@ -28,7 +28,7 @@
     ;; The curve's floor, shared with the paced interval below.
     (define curve-floor 60)
 
-    (define* (drop-interval level (base: base 900) (step: step 70) (floor: floor-ms curve-floor))
+    (define* (drop-interval level (base: base 900) (step: step 45) (floor: floor-ms curve-floor))
       (max floor-ms (- base (* step (- level 1)))))
 
     ;; The level's interval under a pace multiplier — the one knob the

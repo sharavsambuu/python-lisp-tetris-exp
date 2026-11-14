@@ -112,6 +112,8 @@
         ((sprint)   (make-scoring-policy 0 0 2 1 3 0))
         ((ultra)    (make-scoring-policy 1 2 1 2 4 0))
         ((cheese)   (make-scoring-policy 0 0 1 1 3 200))
+        ((survival) (make-scoring-policy 1 2 1 1 3 0))
+        ((zen)      (make-scoring-policy 0 0 1 1 3 0))
         (else (scoring-policy-for 'marathon))))
 
     ;; Scale an award by a policy multiplier. The multipliers are plain

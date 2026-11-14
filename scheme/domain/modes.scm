@@ -15,7 +15,9 @@
 (define-library (tetris modes)
   (import (scheme base)
           (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+          (srfi 28)
           (srfi 89)
+          (srfi 152)
           (tetris geometry) (tetris board))
   (export mode?
           mode-names
@@ -95,20 +97,11 @@
         ((cheese-rows)    (lambda (c v) (config-with c cheese-rows: v)))
         (else #f)))
 
-    ;; The join SRFI 13 would own: this library's scope is closed, so the
-    ;; error strings are built with a fold instead of the prelude's
-    ;; string-join (which a define-library cannot see).
-    (define (join-with sep xs)
-      (let loop ((xs xs) (acc ""))
-        (cond ((null? xs) acc)
-              ((null? (cdr xs)) (string-append acc (car xs)))
-              (else (loop (cdr xs) (string-append acc (car xs) sep))))))
-
     (define (unknown-mode-error name)
       (raise (list "unknown mode" name
                    (string-append "try one of: "
-                                  (join-with ", "
-                                             (map symbol->string (mode-names)))))))
+                                  (string-join (map symbol->string (mode-names))
+                                               ", ")))))
 
     (define (mode-from-name name)
       (if (not (symbol? name))
@@ -127,9 +120,9 @@
         (cond ((not limits)
                (raise (list "unknown mode option" k
                             (string-append "try one of: "
-                                           (join-with ", "
-                                                      (map symbol->string
-                                                           (map car option-limits)))))))
+                                           (string-join (map symbol->string
+                                                             (map car option-limits))
+                                                        ", ")))))
               ((not (number? v))
                (raise (list "mode option expects a number" k v)))
               (else
@@ -137,9 +130,7 @@
                  (if (and (>= v lo) (<= v hi))
                      ((option-setter k) c v)
                      (raise (list "mode option out of range" k
-                                  (string-append "between "
-                                                 (number->string lo) " and "
-                                                 (number->string hi)) v))))))))
+                                  (format #f "between ~a and ~a" lo hi) v))))))))
 
     ;; A mode name and an options alist — `((starting-level 5) …)` — become
     ;; the config `new-game` starts from. Every refusal is a raised condition

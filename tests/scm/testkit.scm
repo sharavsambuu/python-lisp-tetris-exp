@@ -1,26 +1,29 @@
 ;;; tests/scm/testkit.scm — the shared assertion kit for Scheme tests.
 ;;;
-;;; Unlike the domain tests (which raise on the first failure), this kit
-;;; COLLECTS failures: a UI or gameplay suite has many independent checks,
-;;; and a red suite should say everything it saw, not just its first
-;;; surprise. `tk-report!` ends the file: it prints the tally and raises if
-;;; anything failed, so a clean load is still the green light.
-;;;
-;;; One loader quirk shapes this file: `define-syntax` does not cross a
-;;; file boundary here, but procedures do. So the sugar (tk-check/tk-assert)
-;;; is defined in each suite as a two-line macro over `tk-record!`, and all
-;;; the state and the reporting live here.
+;;; Backed by standard `(srfi 64)` (`test-assert`, `test-runner-current`,
+;;; `test-runner-pass-count`, `test-runner-fail-count`) while preserving the
+;;; `tk-reset!`/`tk-record!`/`tk-report!` contract used by the existing suites.
+
+(import (scheme base)
+        (srfi 64))
 
 (define *tk-passed* 0)
 (define *tk-failures* '())   ; newest first: (label actual expected)
 
 (define (tk-reset!)
+  (test-runner-current (test-runner-simple))
+  (test-begin "testkit")
   (set! *tk-passed* 0)
   (set! *tk-failures* '()))
 
 ;; One verdict, whatever syntax sugared it. `ok` is the truthiness of the
-;; check, `actual`/`expected` are kept for the report.
+;; check, `actual`/`expected` are kept for the failure diff report.
 (define (tk-record! label ok actual expected)
+  (if (not (test-runner-current))
+      (begin
+        (test-runner-current (test-runner-simple))
+        (test-begin "testkit")))
+  (test-assert label (if ok #t #f))
   (if ok
       (set! *tk-passed* (+ *tk-passed* 1))
       (set! *tk-failures*
@@ -31,6 +34,8 @@
 (define (tk-section name) name)
 
 (define (tk-report! suite)
+  (if (test-runner-current)
+      (test-end "testkit"))
   (let ((n (length *tk-failures*)))
     (if (= n 0)
         (begin (display suite) (display ": all ")
@@ -44,5 +49,4 @@
              (display "    actual:   ") (write (cadr f)) (newline)
              (display "    expected: ") (write (caddr f)) (newline))
            (reverse *tk-failures*))
-          (error (string-append suite ": failed checks")
-                 (length *tk-failures*))))))
+          (error (string-append suite ": failed checks") n)))))

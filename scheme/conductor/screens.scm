@@ -21,6 +21,7 @@
 
 (import (scheme base)
         (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+        (srfi 28)
         (srfi 88)
         (tetris campaign)
         (tetris locale)
@@ -161,11 +162,12 @@
       (make-menu
        (map (lambda (ch i)
               (let ((key (level-key (campaign-id camp) i)))
-                (list (string-append (number->string i) ". "
-                                     (challenge-title-tr ch)
-                                     (if (level-done? *done* key)
-                                         (tr 'menu-done-mark)
-                                         ""))
+                (list (format #f "~a. ~a~a"
+                              i
+                              (challenge-title-tr ch)
+                              (if (level-done? *done* key)
+                                  (tr 'menu-done-mark)
+                                  ""))
                       (cons 'challenge ch))))
             (campaign-levels camp)
             (iota (length (campaign-levels camp)) 1))))
@@ -195,11 +197,7 @@
                             (persona-title p)
                             (cond (locked (tr 'menu-locked))
                                   ((> (+ wins losses) 0)
-                                   (string-append "  ("
-                                                  (number->string wins)
-                                                  "/"
-                                                  (number->string losses)
-                                                  ")"))
+                                   (format #f "  (~a/~a)" wins losses))
                                   (else "")))))
                (loop (cdr ps) (+ i 1)
                      (cons (list label (cons 'persona p)) acc)))))))
@@ -214,11 +212,10 @@
        (map (lambda (m)
               (let ((best (best-for *bests* (symbol->string m))))
                 (list (if (> best 0)
-                          (string-append (mode-name-tr m)
-                                         "  "
-                                         (tr 'menu-best)
-                                         " "
-                                         (number->string best))
+                          (format #f "~a  ~a ~a"
+                                  (mode-name-tr m)
+                                  (tr 'menu-best)
+                                  best)
                           (mode-name-tr m))
                       (cons 'mode m))))
             (mode-names))))

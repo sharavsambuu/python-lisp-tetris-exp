@@ -49,6 +49,12 @@ for _ in range(5):
 per_call_ms = (time.perf_counter() - t0) / 5 * 1000
 ```
 
+When wall-clock timing says *something* is slow, `host/pygame_host.py::profile_scheme`
+wraps `shslisp.evaluator.measure_calls` to return exact `(steps, counts)` by
+Scheme procedure name without instrumenting any `.scm` file. And for read-heavy
+tables like `content/locale.scm`'s `*lookup*`, `(srfi 125)` `(make-hash-table eq?)`
+replaces linear `assq` scans with O(1) lookups.
+
 The before numbers, on a 200-cell board: `draw-board!` **289 ms**, a full
 `arcade-step!` frame **333 ms**, `px` **0.69 ms per call**, `stack-top`
 **11.6 ms**, `view-busy?` **8.0 ms**. A 16.67 ms frame budget against a

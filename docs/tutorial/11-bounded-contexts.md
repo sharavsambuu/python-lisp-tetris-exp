@@ -206,6 +206,6 @@ pixel, no pixel knows a rule.
 ✓ **Checkpoint.** You can place any new feature in the dependency DAG, and
   you know why the fence is a test and not a hope.
 
-*Next: [The six SRFIs](12-the-srfis.md) — the standard library, doing real
+*Next: [The SRFIs](12-the-srfis.md) — the standard library, doing real
 work.*
 

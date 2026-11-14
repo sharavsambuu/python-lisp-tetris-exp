@@ -17,6 +17,8 @@
 (define-library (tetris campaign)
   (import (scheme base)
           (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+          (srfi 28)
+          (srfi 152)
           (tetris modes))
   (export challenge
           challenge-id
@@ -40,14 +42,6 @@
           record-best)
 
   (begin
-    ;; The join SRFI 13 would own: this library's scope is closed, and the
-    ;; prelude's string-join does not reach in here.
-    (define (join-with sep xs)
-      (let loop ((xs xs) (acc ""))
-        (cond ((null? xs) acc)
-              ((null? (cdr xs)) (string-append acc (car xs)))
-              (else (loop (cdr xs) (string-append acc (car xs) sep))))))
-
     ;; A challenge is `(("id" …) ("title" …) ("mode" …) ("options" …) ("goal" …))`.
     ;; The fields are read by accessors, so a challenge reads as the record
     ;; it is.
@@ -101,7 +95,7 @@
         (cond ((null? cs)
                (raise (list "no challenge" id
                             (string-append "try one of: "
-                                           (join-with ", " (challenge-ids))))))
+                                           (string-join (challenge-ids) ", ")))))
               ((string=? (challenge-id (car cs)) id) (car cs))
               (else (loop (cdr cs))))))
 
@@ -155,7 +149,7 @@
     ;; A level key: campaign id + 1-based position. Stable across edits to
     ;; the ladder's titles and goals.
     (define (level-key campaign-id index)
-      (string-append campaign-id ":" (number->string index)))
+      (format #f "~a:~a" campaign-id index))
 
     (define (level-done? done key)
       (if (assoc key done) #t #f))

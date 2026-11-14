@@ -98,22 +98,35 @@ scheme/
   immutable vector-of-vectors, the bag's random future is a value under a
   seed, the campaign progress and bests are pure alists, and the journal is
   data the conductor drains into the speaker and the effects rail.
-- **The SRFIs, all six, doing real work:**
+- **The SRFIs, doing real work:**
   - **SRFI 1** — `fold`/`every`/`find`/`count`/`iota`/`list-index` carry the
     grid math, the journal scans, and the ladder walks.
   - **SRFI 26** — `cut` specializes arrows and cell rotators (`(cut try-shift
     <> -1 0)`).
+  - **SRFI 28** — `format` (`~a`) renders mode bounds, campaign keys, and
+    menu scoreboard labels cleanly.
+  - **SRFI 64** — backs `tests/scm/testkit.scm` (`test-begin`/`test-assert`/
+    `test-end`) so the Scheme suites run through a standard test runner.
   - **SRFI 88** — keywords name the layout table (`cell:`, `board-x:`), the
     palette, the shape table, and the event alist keys the host sends.
   - **SRFI 89** — `define*` gives the game its difficulty surface
     (`(new-game seed: … mode: … options: …)`) and the config/gravity curves
     their knobs.
+  - **SRFI 125** — O(1) hash tables (`make-hash-table eq?`) back `locale.scm`'s
+    translation lookup table.
+  - **SRFI 152** — `string-join` formats valid-option error hints in
+    `modes.scm` and `campaign.scm`.
   - **SRFI 197** — `chain` spells the view's one-shot pipelines (`centered-x`);
     the per-cell pixel math is plain arithmetic, because a `chain` step pays
     its expansion on every call (§12.5's scar).
   - **SRFI 241** — `match` with string and integer constant patterns reads
     the keymap and the award table as the tables they are (note the `,_`
     wildcard: bare symbols are constants in this SRFI).
+- **Host seam tooling (`shslisp 0.2.3`).** `host.pygame_host:install` plugs
+  into `python -m shslisp --plugin host.pygame_host:install` for headless
+  REPLs and scripts; `main()` prints multi-frame Scheme tracebacks via
+  `LispError.format_traceback()`; and `profile_scheme()` wraps
+  `shslisp.evaluator.measure_calls` for per-procedure call-count profiling.
 - **The director.** A second loop over the match: `(tetris telemetry)` reads
   the stack's pressure off the game value (pure probes, documented ranges),
   `(tetris director)` turns a pressure reading into a pace multiplier

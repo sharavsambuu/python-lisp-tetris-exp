@@ -166,15 +166,14 @@ further movement past it — which holds for any piece at any wall.
 
 ## 9.4 The kit that collects failures
 
-`tests/scm/testkit.scm` is a tiny assertion library with one design decision:
-**collect, don't stop.**
+`tests/scm/testkit.scm` is a tiny assertion library backed by `(srfi 64)`
+(`test-begin`, `test-assert`, `test-end`, `test-runner-current`,
+`test-runner-simple`) with one design decision: **collect, don't stop.**
 
 ```scheme
-;; Unlike the domain tests (which raise on the first failure), this kit
-;; COLLECTS failures: a UI or gameplay suite has many independent checks,
-;; and a red suite should say everything it saw, not just its first
-;; surprise. `tk-report!` ends the file: it prints the tally and raises if
-;; anything failed, so a clean load is still the green light.
+;; Backed by standard `(srfi 64)` while preserving the `tk-reset!`,
+;; `tk-record!`, `tk-report!` contract: collect every failure, print the
+;; actual/expected diffs, and raise if anything failed.
 ```
 
 The report names each failure with actual and expected values — and the whole

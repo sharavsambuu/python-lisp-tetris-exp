@@ -1,4 +1,4 @@
-# Chapter 12 — The six SRFIs, doing real work
+# Chapter 12 — The SRFIs, doing real work
 
 *The files it dissects: everywhere — this chapter is a field guide.*
 
@@ -7,14 +7,14 @@
 > collects the six, each with its real call sites and its judgment call.
 > Read it straight through once, then return to it as a map.
 >
-> **By the end of this chapter you can** name where each of the six SRFIs
+> **By the end of this chapter you can** name where each SRFI
 > earns its keep, and — more importantly — where each one is the *wrong*
 > spelling.
 >
 > **The running project.** The last step: replace three hand-rolled loops in
 > your Breakout with the SRFI spellings that shorten them.
 
-The DSL ships six SRFIs, and the game uses every one of them for something
+The DSL ships a compact SRFI stdlib, and the game uses each library for something
 real. This chapter is the map: for each SRFI, what it is, where it earns its
 keep, and the judgment call of when to reach for it.
 
@@ -238,20 +238,41 @@ The `,_` wildcard is the SRFI's sharpest edge: **bare symbols are constants
 in this `match`**, matched by name — so the wildcard must be written `,_`.
 The codebase's comments repeat it because everyone writes this bug once.
 
-## 12.7 The judgment calls, in one table
+## 12.7 The `shslisp 0.2.3` standard-library additions (28, 64, 125, 152)
+
+`shslisp 0.2.3` added four standard SRFIs that replace earlier hand-rolled
+helpers across the codebase:
+
+- **SRFI 28 (`format`)**: `(format #f "between ~a and ~a" lo hi)` in
+  `domain/modes.scm`, `(format #f "~a:~a" campaign-id index)` in
+  `content/campaign.scm`, and scoreboard/menu strings in `conductor/screens.scm`.
+- **SRFI 64 (`test-begin` / `test-assert` / `test-end`)**: backs
+  `tests/scm/testkit.scm` so the Scheme test suites report through the standard
+  runner.
+- **SRFI 125 (`make-hash-table`, `hash-table-set!`, `hash-table-ref/default`)**:
+  backs `content/locale.scm`'s `*lookup*` table with `(make-hash-table eq?)`
+  for O(1) `tr` lookups per frame instead of linear `assq` walks.
+- **SRFI 152 (`string-join`)**: replaces the duplicated `join-with` helpers in
+  `domain/modes.scm` and `content/campaign.scm`.
+
+## 12.8 The judgment calls, in one table
 
 | SRFI | The codebase's rule of thumb |
 |---|---|
 | 1 | Folds for reads; `let loop` when exiting early or juggling accumulators |
 | 26 | `cut` when the hole is not the last argument |
+| 28 | `(format #f ...)` for multi-part UI labels and range messages |
+| 64 | Standard `test-begin` / `test-assert` / `test-end` runner in `testkit.scm` |
 | 88 | Keywords for small fixed option tables and cross-language event keys |
 | 89 | `define*` for any constructor whose arguments have meanings |
+| 125 | `(make-hash-table eq?)` for larger read-heavy lookup maps (`locale.scm`) |
+| 152 | `string-join` instead of hand-rolled string-joining loops |
 | 197 | `chain` for one-shot left-to-right pipelines — never an inner loop |
 | 241 | `match` for tables read by constant patterns; remember `,_` |
 
 The meta-lesson: **each SRFI is used where it is the shortest honest
 spelling, and nowhere else.** A utility imported but unused is a dependency
-you explain forever; all six here have call sites you can visit in a minute.
+you explain forever; every SRFI here has call sites you can visit in a minute.
 
 ## Exercises
 
@@ -268,7 +289,7 @@ you explain forever; all six here have call sites you can visit in a minute.
 3. Rewrite `line-points` as an alist lookup. Which version would you rather
    meet in a review, and what does that say about when `match` is a table?
 
-✓ **Checkpoint.** You know where each of the six SRFIs earns its keep — and
+✓ **Checkpoint.** You know where each SRFI earns its keep — and
   you have finished the running project: a second game, written in the same
   style, by your own hand.
 

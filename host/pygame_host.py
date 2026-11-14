@@ -738,6 +738,31 @@ def make_game_env(host: PygameHost):
     return env
 
 
+def install(env, *, headless: bool = True, **host_kwargs):
+    """Plugin entry point for `shs --plugin host.pygame_host:install`."""
+    shslisp.evaluator.STEPS_BUDGET = FRAME_STEPS_BUDGET
+    loader = getattr(env, "loader", None)
+    if loader is not None and hasattr(loader, "search_paths"):
+        if SCHEME_DIR not in loader.search_paths:
+            loader.search_paths.append(SCHEME_DIR)
+    host = PygameHost(headless=headless, **host_kwargs)
+    install_primitives(env, host.primitives(), source="host/pygame_host.py")
+    return env
+
+
+def profile_scheme(source: str, env=None, *, top: int = 20) -> dict:
+    """Profile a Scheme expression using `shslisp.evaluator.measure_calls`."""
+    from shslisp import run as _run
+    from shslisp.evaluator import measure_calls
+
+    target_env = env if env is not None else make_env(search_paths=[SCHEME_DIR])
+    result, steps, counts = measure_calls(lambda: _run(source, env=target_env))
+    sorted_counts = dict(
+        sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:top]
+    )
+    return {"result": result, "steps": steps, "counts": sorted_counts}
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the game: build the env, load ``scheme/main.scm``, let Scheme drive."""
     parser = argparse.ArgumentParser(
@@ -786,11 +811,15 @@ def main(argv: list[str] | None = None) -> int:
                       profile_path=args.profile)
     env = make_game_env(host)
     from shslisp import load_lisp
+    from shslisp.errors import LispError
 
     try:
         load_lisp(env, SCHEME_DIR / "main.scm")
     except SystemExit:
         pass  # the game asked to leave; that is a normal ending
+    except LispError as exc:
+        print(exc.format_traceback(), file=sys.stderr)
+        return 1
     finally:
         pygame.quit()
     return 0

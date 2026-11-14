@@ -23,7 +23,9 @@
 
 (define-library (tetris locale)
   (import (scheme base)
-          (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each)))
+          (rename (srfi 1) (map srfi-1:map) (for-each srfi-1:for-each))
+          (srfi 28)
+          (srfi 125))
   (export tr
           tr-fmt
           tr-or
@@ -39,10 +41,10 @@
       '((en "English")
         (mn "Монгол")))
 
-    ;; Which column is live, and the flat alist `tr` actually reads —
+    ;; Which column is live, and the O(1) hash table `tr` reads —
     ;; rebuilt only when the locale changes.
     (define *locale-index* 0)
-    (define *lookup* '())
+    (define *lookup* (make-hash-table eq?))
 
     ;; ---------------------------------------------------------------- ;;
     ;;  The string map — one row per string                              ;;
@@ -63,11 +65,11 @@
         (menu-level-n          "Level ~a"                        "Түвшин ~a")
         (menu-done-mark        " [x]"                            " [x]")
         (menu-versus           "Versus AI"                       "AI-тай өрсөлдөх")
-        (menu-locked           "  [locked]"                      "  [түгжсэн]")
+        (menu-locked           "  [locked]"                      "  [түгжээтэй]")
 
         ;; -- the versus screen ----------------------------------------
         (title-versus          "CHOOSE YOUR OPPONENT"            "ӨРСӨЛДӨГЧӨӨ СОНГОНО УУ")
-        (hint-versus           "RETURN: FIGHT   ESC: BACK"       "RETURN: ТУЛАН   ESC: БУЦАХ")
+        (hint-versus           "RETURN: FIGHT   ESC: BACK"       "RETURN: ТУЛАЛДАХ   ESC: БУЦАХ")
 
         ;; -- the ways to play (display names; keys stay English) ------
         (mode-marathon         "marathon"                        "марафон")
@@ -107,7 +109,7 @@
                                "ЗҮҮН/БАРУУН: 1-ЭЭР   ДЭЭШ/ДООШ: 5-ААР   RETURN: ТОГЛОХ")
 
         ;; -- the overlays (title, pause, win, lose) -------------------
-        (overlay-return-start  "RETURN to start"                 "RETURN — эхлэх")
+        (overlay-return-start  "RETURN to start"                 "RETURN — эхлүүлэх")
         (overlay-paused        "PAUSED"                          "ТҮР ЗОГСООСОН")
         (overlay-p-resume      "P to resume"                     "P — үргэлжлүүлэх")
         (overlay-r-restart     "R to restart"                    "R — дахин эхлэх")
@@ -125,6 +127,8 @@
         (overlay-return-menu   "RETURN to menu"                  "RETURN — цэс рүү")
 
         ;; -- the HUD ---------------------------------------------------
+        (hud-hold              "HOLD"                            "ХАДГАЛАХ")
+        (hud-next              "NEXT"                            "ДАРААХ")
         (hud-score             "SCORE"                           "ОНОО")
         (hud-lines             "LINES"                           "МӨР")
         (hud-level             "LEVEL"                           "ТҮВШИН")
@@ -133,7 +137,7 @@
         (hud-garbage           "GARBAGE ~a"                      "ХОГ ~a")
         (hud-combo             "COMBO x~a"                       "КОМБО x~a")
         (popup-combo           "x~a COMBO"                       "x~a КОМБО")
-        (popup-b2b             "BACK-TO-BACK"                    "ДАРААЛАЛ!")
+        (popup-b2b             "BACK-TO-BACK"                    "ТАСРАЛТГҮЙ!")
         (overlay-new-best      "NEW BEST!"                       "ШИНЭ ДЭЭД АМЖИЛТ!")
         (hud-b2b               "BACK-TO-BACK"                    "ТАСРАЛТГҮЙ")
         (hud-keys              "KEYS"                            "ТОВЧУУД")
@@ -168,18 +172,21 @@
     (define (current-locale)
       (car (list-ref locale-specs *locale-index*)))
 
-    ;; The whole locale switches here, in one fold: each row's chosen
-    ;; column becomes the flat alist a repaint reads. A missing column or
-    ;; a `#f` slot answers the English string — partial translations ship.
+    ;; The whole locale switches here: each row's chosen column populates
+    ;; the hash table a repaint reads. A missing column or a `#f` slot
+    ;; answers the English string — partial translations ship.
     (define (rebuild-cache!)
-      (set! *lookup*
-            (map (lambda (row)
-                   (cons (car row)
-                         (if (< (+ *locale-index* 1) (length row))
-                             (or (list-ref row (+ *locale-index* 1))
-                                 (cadr row))
-                             (cadr row))))
-                 *strings*)))
+      (let ((ht (make-hash-table eq?)))
+        (srfi-1:for-each
+         (lambda (row)
+           (hash-table-set! ht
+                            (car row)
+                            (if (< (+ *locale-index* 1) (length row))
+                                (or (list-ref row (+ *locale-index* 1))
+                                    (cadr row))
+                                (cadr row))))
+         *strings*)
+        (set! *lookup* ht)))
 
     (define (set-locale! code)
       (let loop ((specs locale-specs) (i 0))
@@ -198,39 +205,14 @@
     ;; `key` with a fallback for rows the map does not know — content ids
     ;; ride this: the campaign's own title answers until you translate it.
     (define (tr-or key default)
-      (let ((entry (assq key *lookup*)))
-        (if entry (cdr entry) default)))
+      (hash-table-ref/default *lookup* key default))
 
     (define (tr key)
       (tr-or key (symbol->string key)))
 
-    ;; A value's text, for the ~a slots.
-    (define (->text v)
-      (cond ((string? v) v)
-            ((number? v) (number->string v))
-            ((symbol? v) (symbol->string v))
-            (else "")))
-
-    ;; Replace the first `~a` in s with val's text.
-    (define (splice s val)
-      (let ((n (string-length s)))
-        (let loop ((i 0) (acc ""))
-          (cond ((>= i n) acc)
-                ((and (char=? (string-ref s i) #\~)
-                      (< (+ i 1) n)
-                      (char=? (string-ref s (+ i 1)) #\a))
-                 (string-append acc (->text val)
-                                (substring s (+ i 2) n)))
-                (else (loop (+ i 1)
-                            (string-append acc
-                                           (string (string-ref s i)))))))))
-
-    ;; (tr-fmt 'key v1 v2 …) fills each `~a` slot in order.
+    ;; (tr-fmt 'key v1 v2 …) fills each `~a` slot in order via (srfi 28).
     (define (tr-fmt key . vals)
-      (let loop ((s (tr key)) (rest vals))
-        (if (null? rest)
-            s
-            (loop (splice s (car rest)) (cdr rest)))))
+      (apply format #f (tr key) vals))
 
     ;; The default cache: English, ready before any screen paints.
     (rebuild-cache!)

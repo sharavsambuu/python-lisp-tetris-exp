@@ -33,22 +33,20 @@ Mode options are the canonical case (`scheme/domain/modes.scm`). A menu hands
 ;; and a typo is named.
 (define (checked-option c k v)
   (let ((limits (assq k option-limits)))
-    (cond ((not limits)
-           (raise (list "unknown mode option" k
-                        (string-append "try one of: "
-                                       (join-with ", "
-                                                  (map symbol->string
-                                                       (map car option-limits)))))))
-          ((not (number? v))
-           (raise (list "mode option expects a number" k v)))
-          (else
-           (let ((lo (car (cadr limits))) (hi (cadr (cadr limits))))
-             (if (and (>= v lo) (<= v hi))
-                 ((option-setter k) c v)
-                 (raise (list "mode option out of range" k
-                              (string-append "between "
-                                             (number->string lo) " and "
-                                             (number->string hi)) v))))))))
+        (cond ((not limits)
+               (raise (list "unknown mode option" k
+                            (string-append "try one of: "
+                                           (string-join (map symbol->string
+                                                             (map car option-limits))
+                                                        ", ")))))
+              ((not (number? v))
+               (raise (list "mode option expects a number" k v)))
+              (else
+               (let ((lo (car (cadr limits))) (hi (cadr (cadr limits))))
+                 (if (and (>= v lo) (<= v hi))
+                     ((option-setter k) c v)
+                     (raise (list "mode option out of range" k
+                                  (format #f "between ~a and ~a" lo hi) v))))))))
 ```
 
 Three facts about a wrong option, in every raise:
@@ -63,8 +61,8 @@ The same shape for the mode name itself:
 (define (unknown-mode-error name)
   (raise (list "unknown mode" name
                (string-append "try one of: "
-                              (join-with ", "
-                                         (map symbol->string (mode-names)))))))
+                              (string-join (map symbol->string (mode-names))
+                                           ", ")))))
 ```
 
 The condition is a plain **list** — message first, irritants after. It is not
@@ -139,10 +137,10 @@ The renderer is three cases, because the DSL can raise three kinds of thing:
   ;; The challenge named `id`, or a raised condition naming the set —
   ;; never a silent miss. The conductor's guard turns one into a message.
   (let loop ((cs *challenges*))
-    (cond ((null? cs)
-           (raise (list "no challenge" id
-                        (string-append "try one of: "
-                                       (join-with ", " (challenge-ids))))))
+        (cond ((null? cs)
+               (raise (list "no challenge" id
+                            (string-append "try one of: "
+                                           (string-join (challenge-ids) ", ")))))
           ((string=? (challenge-id (car cs)) id) (car cs))
           (else (loop (cdr cs))))))
 

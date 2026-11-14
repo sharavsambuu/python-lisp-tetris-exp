@@ -52,7 +52,7 @@ smaller game in this style, and every technique will be something you have
 | # | Chapter | You learn |
 |---|---------|-----------|
 | 11 | [Bounded contexts](11-bounded-contexts.md) | DDD with `define-library`: closed scopes, the dependency DAG, the purity fence |
-| 12 | [The six SRFIs](12-the-srfis.md) | SRFI 1/26/88/89/197/241 — where each earns its keep, and the judgment calls |
+| 12 | [The SRFIs](12-the-srfis.md) | SRFI 1/26/28/64/88/89/125/152/197/241 — where each earns its keep, and the judgment calls |
 | 13 | [Hot paths](13-hot-paths.md) | The three slowdown traps of a tree-walking interpreter, worst-case harnesses, benchmark guards with justified bounds |
 
 ### Part V — The feel (making it fun, and keeping it honest)
@@ -79,6 +79,13 @@ smaller game in this style, and every technique will be something you have
 | 21 | [Versus](21-versus.md) | Measuring the painter before the layout, the batch primitive that earned its place on the seam, two boards from one painter, the persona ladder as a menu, a human in the circuit |
 | 22 | [The closeness band](22-the-closeness-band.md) | The duel director: a probe over a relationship, the ethical wall that touches only the AI, the seeded A/B that proves the claim, the slow outer loop that retunes across sessions |
 
+### Part VIII — Content & Tooling (shipping and observing the game)
+
+| # | Chapter | You learn |
+|---|---------|-----------|
+| 23 | [Content as data: campaigns and localization](23-localization.md) | Data-driven campaign ladders, partial-translation fallbacks, and `(srfi 125)` O(1) locale lookup |
+| 24 | [Debugging, profiling, and the plugin seam](24-tooling-and-profiling.md) | `shs --plugin host.pygame_host:install`, `LispError.format_traceback()`, `profile_scheme()` (`measure_calls`), and `(srfi 64)` |
+
 
 ## What the root README flexes → where the series teaches it
 
@@ -92,8 +99,12 @@ smaller game in this style, and every technique will be something you have
 | **Functional programming** (the session as a value, journal as data) | [5](05-state-as-a-value.md), [6](06-frames-and-time.md) |
 | **SRFI 1** (folds, `every`, `find`, `count`, `iota`, `list-index`) | [12](12-the-srfis.md) (§12.1), [5](05-state-as-a-value.md) |
 | **SRFI 26** (`cut` specializes arrows) | [12](12-the-srfis.md) (§12.2), [3](03-the-railway.md) |
+| **SRFI 28** (`format`) | [12](12-the-srfis.md) (§12.7) |
+| **SRFI 64** (`test-begin` / `test-assert` / `test-end`) | [9](09-testing.md) (§9.4), [12](12-the-srfis.md) (§12.7) |
 | **SRFI 88** (keywords name the tables and event keys) | [12](12-the-srfis.md) (§12.3), [7](07-the-edge.md) |
 | **SRFI 89** (`define*` gives the difficulty surface its knobs) | [12](12-the-srfis.md) (§12.4), [5](05-state-as-a-value.md) |
+| **SRFI 125** (`make-hash-table` for O(1) locale lookup) | [12](12-the-srfis.md) (§12.7) |
+| **SRFI 152** (`string-join` for valid-option error hints) | [4](04-conditions.md), [12](12-the-srfis.md) (§12.7) |
 | **SRFI 197** (`chain` shapes the pixel pipelines) | [12](12-the-srfis.md) (§12.5), [7](07-the-edge.md), [13](13-hot-paths.md) (§13.2 — where it does *not* belong) |
 | **SRFI 241** (`match` reads the keymap and award tables) | [12](12-the-srfis.md) (§12.6), [2](02-closed-vocabularies.md) |
 

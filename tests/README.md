@@ -54,7 +54,8 @@ nothing releases it — a physical keyboard sends KEYUP. The flood of stale
 | `ui-tests.scm` | screens + fake host | which texts painted where, fit in the window | kit: collected, reported |
 | `shell-tests.scm` | the shell + fake host | `*screen*` and the phase after every key | kit: collected, reported |
 
-`testkit.scm` is the shared kit: `tk-check`/`tk-assert` (sugared per suite —
+`testkit.scm` is the shared kit, backed by `(srfi 64)` (`test-begin`,
+`test-assert`, `test-end`): `tk-check`/`tk-assert` (sugared per suite —
 `define-syntax` does not cross a file boundary in this loader) record pass
 and fail; `tk-report!` prints the tally and raises if anything failed, so a
 clean load is still the green light. `domain-tests` predates the kit and

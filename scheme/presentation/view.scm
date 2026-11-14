@@ -569,7 +569,7 @@
                   cells)))
 
     (define (draw-hold! st)
-      (draw-panel! (lay left-x:) "HOLD")
+      (draw-panel! (lay left-x:) (tr 'hud-hold))
       ;; The held piece itself, in its own color, centered in the slot —
       ;; and a swap lights the *shape* up, then the pulse decays, so the
       ;; player's eye lands where the state changed.
@@ -587,7 +587,7 @@
             #f)))
 
     (define (draw-next! st)
-      (draw-panel! (lay right-x:) "NEXT")
+      (draw-panel! (lay right-x:) (tr 'hud-next))
       ;; The queue as three real pieces, each centered on the panel's
       ;; midline — the same cells the board will spawn, in the colors it
       ;; will spawn them in. The midline read is hoisted; the loop body is
@@ -883,7 +883,7 @@
     (define (draw-opponent! st persona)
       (let* ((ox (lay duel-board-x:))
              (px (lay duel-panel-x:)))
-        (draw-panel! px "NEXT")
+        (draw-panel! px (tr 'hud-next))
         (let ((cx (+ px (quotient (lay panel-w:) 2))))
           (let loop ((names (bag-peek (game-bag st) 3)) (i 0))
             (if (null? names)
@@ -905,7 +905,7 @@
                         22 (color accent:)
                         (- duel-window-width ox 8))
         (draw-text-fit! px 212
-                        (tr-fmt 'hud-lines (game-lines st))
+                        (tr-fmt 'overlay-lines (game-lines st))
                         18 (color dim:)
                         (- duel-window-width px 8))
         (draw-playing-field! st ox 'right)))

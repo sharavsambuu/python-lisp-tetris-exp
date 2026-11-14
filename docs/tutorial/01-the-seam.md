@@ -140,9 +140,13 @@ more than they look:
 (arcade-main)                ; Scheme's own tail-call loop, forever
 ```
 
-The order *is* the dependency graph, written top to bottom. Notice what is
-absent: no import machinery, no registry, no plugin discovery. An embedded DSL
-earns its keep when the whole program is data you can read in one screen.
+The order *is* the dependency graph, written top to bottom. Inside `scheme/`,
+there is no hidden registry or plugin discovery: the whole program is data you
+can read in one screen. At the Python edge, `host/pygame_host.py` also exposes
+`install(env)` so `python -m shslisp --plugin host.pygame_host:install` can
+open a headless REPL or run scripts against the host primitives, and `main()`
+catches `LispError` to print a multi-frame Scheme traceback via
+`exc.format_traceback()`.
 
 One subtlety hides in the word `load`. Loading a `define-library` file
 *registers* the library — its body does not run until something first imports

@@ -62,6 +62,7 @@
     (define *ai* #f)           ;; does Lisp play? (A toggles)
     (define *st* (new-game))   ;; the live match, when there is one
     (define *dirty* #t)        ;; does the screen need paint?
+    (define *duel-paint-acc* 0)
 
     ;; How far up the level ladder *free play* offers. A design choice, not
     ;; a rule: the domain's progression keeps going, this is just how high a
@@ -486,14 +487,14 @@
                     ;; drained in the same call that produced it, so it
                     ;; never reached the sound and beam rails.
                     (set! *duel* (duel-advance *duel* dt))
-                    (duel-award! 'left
-                                 (srfi-1:filter
-                                  duel-awardable?
-                                  (reverse (game-journal (duel-left *duel*)))))
-                    (duel-award! 'right
-                                 (srfi-1:filter
-                                  duel-awardable?
-                                  (reverse (game-journal (duel-right *duel*)))))
+                    (let ((jl (game-journal (duel-left *duel*)))
+                          (jr (game-journal (duel-right *duel*))))
+                      (if (not (null? jl))
+                          (duel-award! 'left (srfi-1:filter duel-awardable? (reverse jl)))
+                          #f)
+                      (if (not (null? jr))
+                          (duel-award! 'right (srfi-1:filter duel-awardable? (reverse jr)))
+                          #f))
                     (set! *duel* (duel-exchange *duel*)))
                   #f)
               ;; Settle once, whatever route the terminal state arrived by:
@@ -502,19 +503,15 @@
               (if (and (duel-over? *duel*) (not *settled*))
                   (settle-duel!)
                   #f)
+              (set! *duel-paint-acc* (+ *duel-paint-acc* dt))
               (if (or *dirty*
-                      ;; The world moved: a live duel repaints every frame —
-                      ;; the right well falls and steers whether or not the
-                      ;; player's side is animating, and a repaint gate that
-                      ;; only watched the LEFT side's effects froze the
-                      ;; opponent's board on screen between the player's own
-                      ;; events. Cached boards make the frame cheap; the
-                      ;; gate's job is only to spare the paused and decided
-                      ;; screens.
-                      (and (not *duel-paused*) (not (duel-over? *duel*)))
+                      (and (not *duel-paused*)
+                           (not (duel-over? *duel*))
+                           (>= *duel-paint-acc* 33))
                       (view-busy? (duel-left *duel*)))
                   (begin
                     (draw-duel! *duel* *persona*)
+                    (set! *duel-paint-acc* 0)
                     (set! *dirty* #f))
                   #f)))))
 

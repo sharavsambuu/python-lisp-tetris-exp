@@ -130,10 +130,20 @@
     ;; degrades to small type, not to nothing). `text-width` is one
     ;; cached-font measurement; the loop runs only while the string still
     ;; overflows, and only on frames that paint it.
+    (define *fit-cache* '())
     (define (fit-size s size max-w)
-      (if (or (<= size 10) (<= (text-width s size) max-w))
-          size
-          (fit-size s (- size 1) max-w)))
+      (let* ((k (list s size max-w))
+             (hit (assoc k *fit-cache*)))
+        (if hit
+            (cdr hit)
+            (let ((sz (let loop ((cur size))
+                        (if (or (<= cur 10) (<= (text-width s cur) max-w))
+                            cur
+                            (loop (- cur 1))))))
+              (set! *fit-cache*
+                    (cons (cons k sz)
+                          (if (> (length *fit-cache*) 48) '() *fit-cache*)))
+              sz))))
 
     ;; `draw-text!` with a width budget: the type scales to fit, the
     ;; position and the string stay as asked.

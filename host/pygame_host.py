@@ -46,6 +46,7 @@ import shslisp.evaluator
 
 from shslisp import install_primitives, make_env
 from shslisp.types import intern_keyword, intern
+from host.ai_kernel import host_best_placement
 
 __all__ = ["PygameHost", "make_game_env", "main", "SCHEME_DIR"]
 
@@ -713,6 +714,7 @@ class PygameHost:
             ("sfx!", self.sfx),
             ("quit!", self.quit),
             ("autostart?", lambda: self.autostart),
+            ("host-best-placement", host_best_placement),
         ]
 
 

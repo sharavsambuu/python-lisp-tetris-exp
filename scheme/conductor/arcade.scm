@@ -978,21 +978,44 @@
           (set! *plan-ready* #f)
           (set! *plan-slam?* #f))
         (when (not *plan-ready*)
-          (let ((plan (best-placement st ws budget locks)))
-            (when (not (eq? plan 'pending))
-              (let* ((cur-idx (and plan (+ (* (cadr plan) 10) (car plan))))
-                     (cur-best (and cur-idx (vector-ref *search-scores* cur-idx))))
-                (if (ai-should-hold? st ws cur-best)
-                    (set! held-now? #t)
-                    ;; #f: every placement is refused or dead — the piece has
-                    ;; nowhere good to go, and the fastest kind thing is the
-                    ;; slam that brings the next one.
-                    (if plan
-                        (begin
-                          (set! *plan-x* (car plan))
-                          (set! *plan-rot* (cadr plan))
-                          (set! *plan-ready* #t))
-                        (set! *plan-slam?* #t)))))))
+          (let ((fast-ai (guard (ex (#t #f)) host-best-placement)))
+            (if (procedure? fast-ai)
+                (let* ((p (game-active st))
+                       (nxt (car (bag-peek (game-bag st) 1)))
+                       (ws-list (list (w-cleared ws) (w-holes ws)
+                                      (w-bumpiness ws) (w-wells ws)
+                                      (w-attack ws) (w-roof ws)))
+                       (res (and p
+                                 (fast-ai
+                                  (game-board st)
+                                  (falling-name p)
+                                  (falling-y p)
+                                  nxt
+                                  (game-hold st)
+                                  (game-can-hold st)
+                                  ws-list
+                                  (if *ai-lookahead* *lookahead-k* 0)))))
+                  (cond ((not res) (set! *plan-slam?* #t))
+                        ((caddr res) (set! held-now? #t))
+                        (else
+                         (set! *plan-x* (car res))
+                         (set! *plan-rot* (cadr res))
+                         (set! *plan-ready* #t))))
+                (let ((plan (best-placement st ws budget locks)))
+                (when (not (eq? plan 'pending))
+                  (let* ((cur-idx (and plan (+ (* (cadr plan) 10) (car plan))))
+                         (cur-best (and cur-idx (vector-ref *search-scores* cur-idx))))
+                    (if (ai-should-hold? st ws cur-best)
+                        (set! held-now? #t)
+                        ;; #f: every placement is refused or dead — the piece has
+                        ;; nowhere good to go, and the fastest kind thing is the
+                        ;; slam that brings the next one.
+                        (if plan
+                            (begin
+                              (set! *plan-x* (car plan))
+                              (set! *plan-rot* (cadr plan))
+                              (set! *plan-ready* #t))
+                            (set! *plan-slam?* #t)))))))))
         (cond (held-now?
                (result-unwrap-or (apply-command st (hold-piece)) st))
               (*plan-slam?* (ai-drop st))

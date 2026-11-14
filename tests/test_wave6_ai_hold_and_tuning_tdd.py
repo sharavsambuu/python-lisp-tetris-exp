@@ -79,3 +79,29 @@ def test_t62_arcade_ai_uses_lookahead_and_evaluates_hold_without_crash():
     run("(search-reset! g (list 0 (falling-name (game-active g))))", env=env)
     res = run("(ai-should-hold? g (weights 2.0 3.0 0.8 0.8 1.5 0.7) -9999.0)", env=env)
     assert res is True
+
+
+def test_t63_python_host_ai_kernel_returns_valid_plan():
+    from host.ai_kernel import host_best_placement
+
+    env = make_env(search_paths=[SCHEME])
+    for rel in [
+        "core/rop.scm",
+        "domain/geometry.scm",
+        "domain/board.scm",
+        "domain/bag.scm",
+        "domain/modes.scm",
+        "domain/game.scm",
+    ]:
+        load_lisp(env, SCHEME / rel)
+
+    run("(import (tetris game) (tetris bag))", env=env)
+    run("(define g (fresh-game seed: 1))", env=env)
+    board = run("(game-board g)", env=env)
+    nxt = run("(car (bag-peek (game-bag g) 1))", env=env)
+    plan = host_best_placement(board, "t", 0, nxt, False, True, [2.0, 2.8, 0.6, 0.7, 1.6, 0.9], 2)
+    assert isinstance(plan, list) and len(plan) == 3
+    x, rot, hold = plan
+    assert 0 <= x < 10
+    assert 0 <= rot < 4
+    assert isinstance(hold, bool)
